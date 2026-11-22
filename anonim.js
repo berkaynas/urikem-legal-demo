@@ -17,12 +17,14 @@
 //
 // Değişiklik: Yalnız metin çekirdeği (Türkçe katlama, liste, sabit kalıplar, şirket unvanı, emsal bağlamı,
 // geri çevirme, şüpheli taraması) taşındı; Word/UDF/PDF okuma bölümleri alınmadı. Kurallar aynen korundu.
+// Düzeltme (2026-11-23): düzenli ifade kaçışı Unicode kipine uyarlandı ('-' ve '/' içeren adlarda ve geri çevirmede hata veriyordu).
 // Kural: Urikem Legal'de yapay zekâya giden HER metin önce buradan geçer; gerçek değerler bilgisayardan çıkmaz.
 (function (kok) {
   const UA = (kok.UA = kok.UA || {});
   const W = '[\\p{L}\\p{N}_]';            // Python'daki Unicode \w
   const NW_ONCE = `(?<!${W})`, NW_SONRA = `(?!${W})`;
-  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\\/-]/g, '\\$&');
+  // Unicode kipindeki (u) düzenli ifadelerde '-' ve '/' kaçırılamaz; bunlar karakter sınıfı dışında zaten düz harftir.
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
   // ---------- Türkçe katlama: uzunluk korunur, konumlar değişmez ----------
   const TR = { 'İ': 'i', 'I': 'i', 'ı': 'i', 'Ş': 's', 'ş': 's', 'Ç': 'c', 'ç': 'c', 'Ğ': 'g', 'ğ': 'g', 'Ö': 'o', 'ö': 'o', 'Ü': 'u', 'ü': 'u', 'Â': 'a', 'â': 'a', 'Î': 'i', 'î': 'i', 'Û': 'u', 'û': 'u' };
