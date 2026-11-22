@@ -614,7 +614,7 @@
     let i = 0;
     for (const t of taraf) if (UA.normal(t.adi) !== UA.normal(muvAd)) satir.push(`[Karşı taraf ${String.fromCharCode(65 + (i++ % 26))}${i > 26 ? Math.ceil(i / 26) : ''}] = ${ad(t.adi)}`);
     const avk = D.elle.ayarlar?.avukatAdi || (D.elle.dosyalar[dosyaId]?.bizimAdlar || [])[0];
-    if (avk) { const yalin = String(avk).replace(/^\s*av\.?\s*/i, '').trim(); satir.push(`[Avukat] = ${yalin}${yalin !== avk ? '; ' + avk : ''}`); }
+    if (avk) { const yalin = String(avk).replace(/^\s*av\.?\s*/i, '').trim(); satir.push(`[Avukat] = Av. ${yalin}; ${yalin}`); }
     ekler.forEach((x, k) => satir.push(/^\s*\[[^\]]+\]\s*=/.test(x) ? x : `[Kişi ${k + 1}] = ${ad(x)}`));
     return satir.join('\n');
   }
@@ -703,12 +703,14 @@ Kurallar:
 - Kanun maddesi anabilirsin. Yargıtay, Danıştay ya da bölge adliye mahkemesi kararı anarsan yalnız gerçekten var olduğundan emin olduklarını an ve her birinin sonuna [DOĞRULANMALI] yaz. Karar künyesi uydurma.
 - Süre hesabı yapma, son gün yazma.
 - Bilmediğin olgular için uydurma; [...] ile boş bırak ve avukatın tamamlaması gerektiğini belirt.
-- Yalnız dilekçe metnini yaz; açıklama ya da sohbet ekleme.`;
+- Markdown biçimlendirmesi (**, #, ---, tablo) kullanma; düz metin yaz, başlıkları BÜYÜK HARFLE yaz. Metin doğrudan Word'e ve UYAP'a aktarılacak.
+- Avukatın dikkat etmesi gereken bir usul sorunu görürsen dilekçenin başına köşeli parantez içinde kısa bir "AVUKAT NOTU" ekle; dilekçenin kendisine sohbet ekleme.`;
   const REVIZE_SISTEM = `Türk hukukunda deneyimli bir avukatın yanında çalışan bir yardımcısın. Avukatın yazdığı dilekçeyi gözden geçirip daha açık, eksiksiz ve usule uygun hâle getirirsin. Türkçe yazarsın.
 Kurallar:
 - Köşeli parantezli etiketleri ([Müvekkil], [Karşı taraf A], [TCKN-1] gibi) aynen koru; açmaya ya da yeni etiket uydurmaya çalışma.
 - Avukatın olgularını ve taleplerini değiştirme; dili, düzeni, eksik bölümleri ve tutarsızlıkları düzelt.
 - Karar künyesi uydurma; yeni andığın her yargı kararının sonuna [DOĞRULANMALI] yaz. Süre hesabı yapma.
+- Markdown biçimlendirmesi (**, #, tablo) kullanma; düz metin yaz, başlıkları BÜYÜK HARFLE yaz.
 - Önce düzeltilmiş dilekçenin tamamını yaz. Sonra tek başına "---" satırı koy ve altına "Yapılan değişiklikler ve avukatın kontrol etmesi gerekenler" başlığıyla kısa maddeler yaz.`;
 
   function dilekceIstegi(did, v) {
@@ -718,7 +720,7 @@ Kurallar:
     const dr = durusmalar().filter((x) => x.dosyaId === did).slice(0, 2);
     const satir = ['DOSYA BİLGİLERİ (UYAP)', `Mahkeme: ${d.birimAdi || '—'}`, `Dosya: ${d.dosyaNo || '—'}`, `Dosya türü: ${d.dosyaTur || '—'} · Durum: ${d.dosyaDurum || '—'}`];
     if (d.davaTurleri) satir.push(`Dava türü: ${d.davaTurleri}`);
-    if (taraf.length) { satir.push('Taraflar:'); for (const t of taraf) satir.push(`- ${t.rol || 'Taraf'}: ${t.adi}${UA.normal(t.adi) === UA.normal(e.muvekkil) ? ' (müvekkilimiz)' : ''}${t.vekil ? ` — vekili: ${t.vekil}` : ''}`); }
+    if (taraf.length) { satir.push('Taraflar:'); for (const t of taraf) satir.push(`- ${t.rol || 'Taraf'}: ${t.adi}${/kurum|tüzel|tuzel|şirket/i.test(t.kisiKurum || '') ? ' (tüzel kişi)' : /kişi|kisi|gerçek/i.test(t.kisiKurum || '') ? ' (gerçek kişi)' : ''}${UA.normal(t.adi) === UA.normal(e.muvekkil) ? ' (müvekkilimiz)' : ''}${t.vekil ? ` — vekili: ${t.vekil}` : ''}`); }
     if (ev.length) { satir.push('Dosyadaki son evrak:'); for (const x of ev) satir.push(`- ${UA.trTarih(x.onayTarihi)} ${x.tur}${x.aciklama && x.aciklama !== x.tur ? ' — ' + x.aciklama : ''}`); }
     if (dr.length) satir.push('Yaklaşan duruşma: ' + dr.map((x) => `${UA.trTarih(x.tarihSaat)} ${x.islem || ''}`).join('; '));
     satir.push('', v.mod === 'revize' ? 'İSTEK: Aşağıdaki dilekçeyi gözden geçir ve düzelt.' : `İSTEK: ${v.tur} yaz.`);
@@ -776,9 +778,11 @@ Kurallar:
   function dilekceDemoCikti(h, v) {
     return `[Mahkeme başlığı — dosyadaki mahkeme]\nDOSYA NO: [DOSYA NO-1]\n\nDAVALI: [Müvekkil]\nVEKİLİ: Av. [Avukat]\nDAVACI: [Karşı taraf A]\n\nKONU: ${v.mod === 'revize' ? 'Dilekçenin gözden geçirilmiş hâli.' : v.tur + '.'}\n\nAÇIKLAMALAR:\n1. [Karşı taraf A] tarafından açılan davada ileri sürülen iddialar kabul edilmemektedir.\n2. ${v.talimat ? String(v.talimat).slice(0, 300) : '[Avukatın notlarına göre doldurulacak olgular]'}\n3. Yargıtay 9. Hukuk Dairesi'nin 2019/1234 E., 2020/5678 K. sayılı kararı da bu yöndedir. [DOĞRULANMALI]\n\nHUKUKİ NEDENLER: 4857 sayılı İş Kanunu, HMK ve ilgili mevzuat.\nDELİLLER: Puantaj kayıtları, bordrolar, tanık beyanları, bilirkişi incelemesi ve her türlü yasal delil.\n\nSONUÇ VE İSTEM: Yukarıda açıklanan nedenlerle davanın reddine, yargılama giderleri ile vekâlet ücretinin karşı tarafa yükletilmesine karar verilmesini saygıyla arz ve talep ederiz.\n\n[Tarih]\nDavalı [Müvekkil] Vekili\nAv. [Avukat]`;
   }
+  const markdownSil = (t) => String(t).replace(/\*\*(.+?)\*\*/g, '$1').replace(/^#{1,6}\s+/gm, '').replace(/^\s*-{3,}\s*$/gm, '');
   function dilekceSonucIsle(k, ham) {
+    ham = markdownSil(ham);
     k.cevapHam = ham;
-    k.cevap = UA.geriCevir(ham, k.hazirlik.sonuc);
+    k.cevap = UA.geriCevir(ham, k.hazirlik.sonuc).replace(/\bAv\.\s*Av\.\s*/g, 'Av. ');
     k.kalanEtiket = [...new Set((k.cevap.match(/\[(?:Müvekkil|Avukat|Karşı taraf [A-Z]\d*|Kişi \d+|Vekil \d+|[A-ZÇĞİÖŞÜ-]+-\d+)\]/g) || []))];
     k.atiflar = atifBul(k.cevap);
   }
