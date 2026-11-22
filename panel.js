@@ -235,25 +235,108 @@
       <button class="dugme">Sor</button>
     </form>${buyuk ? `<div class="oneriler">${UA.ORNEK_SORULAR.map((q) => `<button class="cip" data-sor="${esc(q)}">${esc(q)}</button>`).join('')}</div>` : ''}`;
 
+  // ---------- yapay zekâyla sorgu yorumlama ----------
+  // Kural tabanlı çözücü soruyu anlamazsa soru Claude'a gider; Claude YALNIZ bir süzgeç (JSON) döndürür,
+  // arama bu bilgisayarda yapılır. Sorudaki müvekkil adları ve numaralar önce maskelenir; maskelenemeyen bir ad
+  // kalırsa soru kendiliğinden gönderilmez, avukata sorulur.
+  const SORGU_SISTEM = (ctx) => `Bir avukatın dosya yönetim programında arama kutusuna yazdığı Türkçe soruyu bir arama süzgecine çevirirsin. Yalnız geçerli JSON yaz; açıklama, kod bloğu ya da başka metin yazma.
+Bugün: ${ctx.bugun}.
+Süzgeç alanları (gerekmeyeni null ya da boş bırak):
+{"konu": "durusma" | "tebligat" | "evrak" | "sure" | "para" | "muvekkil" | "dosya" | "ajanda",
+ "zaman": {"bas": "YYYY-AA-GG", "bit": "YYYY-AA-GG"} | null,
+ "tur": "icra" | "hukuk" | "ceza" | "idare" | null,
+ "dosyaDurumlari": dosya durumunda geçmesi gereken küçük harfli ifadeler; BİRİ yeterli, ör. ["yargıtay", "istinaf"],
+ "muvekkiller": soruda geçen müvekkil etiketleri, ör. ["[Müvekkil 3]"],
+ "birimler": mahkeme adında geçmesi gereken küçük harfli kelimeler; BİRİ yeterli, ör. ["ticaret"],
+ "dosyaNo": "YYYY/NNN" ya da soruda geçen dosya no etiketi | null,
+ "evrakVar": dosyada bulunması gereken evrak türü kelimeleri, küçük harf, ör. ["bilirkişi raporu"],
+ "evrakYok": dosyada bulunmaması gereken evrak türü kelimeleri, ör. ["itiraz"],
+ "durusma": "var" (yaklaşan duruşması olan dosyalar) | "yok" (yaklaşan duruşması olmayan) | null,
+ "durum": {"avansEksi": bool, "okunmamis": bool, "belgesiz": bool, "suresiz": bool, "uyumsuz": bool, "kapali": bool},
+ "sirala": "masraf" | "bakiye" | "tarih" | null, "limit": sayı | null,
+ "anlasilan": "sorudan ne anladığının tek cümlelik Türkçe özeti"}
+Konu anlamları: durusma = duruşmalar; tebligat = gelen tebligatlar; evrak = gelen evrak; sure = avukatın girdiği son günler; para = dosya masraf/avans; muvekkil = müvekkil listesi ve hesapları; dosya = dosya listesi; ajanda = bir tarih aralığındaki bütün işler.
+Dosya türleri: ${ctx.turler.join(', ')}. Dosya durumları: ${ctx.durumlar.join(', ')}.
+"Yargıtay'da", "istinafta", "karara çıkmış", "derdest", "kapanmış" gibi ifadeler dosya DURUMUDUR, mahkeme adı değildir: dosyaDurumlari'na yaz. "Açık dosya" = dosyaDurumlari ["açık"]. Mahkeme adı ancak "ticaret mahkemesi", "Kadıköy", "3. İş" gibi bir mahkemeyi kastediyorsa birimler'e yazılır.
+Köşeli parantezli etiketler gizlenmiş adlardır; aynen kullan. Emin olmadığın alanı boş bırak.`;
+  function sorguMaskele(soru) {
+    const adlar = muvekkiller().map((m) => m.ad).filter((a) => a && !/\*{2,}/.test(a));
+    const liste = adlar.map((a, i) => `[Müvekkil ${i + 1}] = ${a}`).join('\n');
+    const h = UA.anonimlestir(soru, liste);
+    return { ...h, supheli: supheliSuz(h.supheliler, h.anonim) };
+  }
+  function yzSuzgecCevir(j, soru) {
+    const g = (x) => (x == null || x === '' ? null : x);
+    const tarih = (x) => (x ? UA.gun(UA.tarihCoz(x)) : null);
+    const r = { metin: soru, konu: ['durusma', 'tebligat', 'evrak', 'sure', 'para', 'muvekkil', 'dosya', 'ajanda'].includes(j.konu) ? j.konu : 'dosya',
+      zaman: j.zaman && j.zaman.bas && j.zaman.bit ? { bas: tarih(j.zaman.bas), bit: tarih(j.zaman.bit), etiket: `${UA.trTarih(tarih(j.zaman.bas))} – ${UA.trTarih(tarih(j.zaman.bit))}` } : null,
+      tur: g(j.tur), muvekkiller: [], birimler: (j.birimler || []).map(UA.normal).filter(Boolean), dosyaNo: g(j.dosyaNo),
+      durum: Object.fromEntries(Object.entries(j.durum || {}).filter(([, v]) => v === true)),
+      dosyaDurumlari: [...(j.dosyaDurumlari || []), ...(j.dosyaDurumu ? [j.dosyaDurumu] : [])].map(UA.normal).filter(Boolean), birimVeya: true, evrakVar: (j.evrakVar || []).map(UA.normal).filter(Boolean), evrakYok: (j.evrakYok || []).map(UA.normal).filter(Boolean),
+      durusma: ['var', 'yok'].includes(j.durusma) ? j.durusma : null, sirala: g(j.sirala), limit: +j.limit || null, anlasilan: g(j.anlasilan), yz: true };
+    const adlar = new Set(muvekkiller().map((m) => m.ad));
+    r.muvekkiller = (j.muvekkiller || []).filter((x) => adlar.has(x));
+    r.hedefMuvekkil = r.konu === 'muvekkil' || r.sirala === 'masraf' && r.konu === 'muvekkil';
+    return r;
+  }
+  async function yzSorguYorumla(soru, gonderOnayli) {
+    const m = sorguMaskele(soru);
+    if (m.supheli.length && !gonderOnayli) { D.sorguYz = { soru, bekliyor: false, onayGerek: true, maskeli: m.anonim, supheli: m.supheli }; return sonraCiz(); }
+    D.sorguYz = { soru, bekliyor: true, maskeli: m.anonim }; sonraCiz();
+    try {
+      const ctx = { bugun: UA.iso(new Date()), turler: [...new Set(Object.values(D.db.dosyalar).map((d) => d.dosyaTur).filter(Boolean))], durumlar: [...new Set(Object.values(D.db.dosyalar).map((d) => String(d.dosyaDurum || '').replace(/\s*\(.*$/, '')).filter(Boolean))] };
+      const ham = await yzUret(SORGU_SISTEM(ctx), m.anonim, 'low');
+      const acik = UA.geriCevir(ham, m);
+      const j = JSON.parse((acik.match(/\{[\s\S]*\}/) || [''])[0]);
+      if (D.sorgu === soru) D.sorguYz = { soru, bekliyor: false, maskeli: m.anonim, filtre: yzSuzgecCevir(j, soru) };
+    } catch (e) { if (D.sorgu === soru) D.sorguYz = { soru, bekliyor: false, maskeli: m.anonim, hata: e.message || 'Claude soruyu yorumlayamadı.' }; }
+    sonraCiz();
+  }
+
   function sorguSayfa() {
-    const r = UA.sorguCoz(D.sorgu, { muvekkilAdlari: muvekkiller().map((m) => m.ad) });
+    const kural = UA.sorguCoz(D.sorgu, { muvekkilAdlari: muvekkiller().map((m) => m.ad) });
+    // Kural yalnız konuyu yakalayıp başka hiçbir şart bulamadıysa ve soru kısa değilse (ya da "ama, henüz, olmayan, en çok" gibi
+    // kuralların bilmediği bir yapı varsa) soruyu anlamamış sayılır ve Claude'a sorulur.
+    const sartsiz = !kural.zaman && !kural.tur && !kural.muvekkiller.length && !kural.birimler.length && !kural.dosyaNo && !Object.keys(kural.durum).length;
+    const kelime = String(D.sorgu).trim().split(/\s+/).length;
+    const karmasik = /\b(ama|fakat|henüz|hiç|olmayan|olmamış|etmediğim|etmediğimiz|yapmadığım|gelmeyen|en çok|en fazla|en az|kaç|hangi|neden|değil)\b/i.test(D.sorgu);
+    const zayif = sartsiz && ((kural.konu === 'dosya' && kelime >= 2) || kelime >= 4 || karmasik);
+    const yzS = D.sorguYz && D.sorguYz.soru === D.sorgu ? D.sorguYz : null;
+    const yzBagli = D.yzDurum?.hazir && D.yzDurum?.giris;
+    if (!D.yzDurum && !D.yzSoruldu) { D.yzSoruldu = true; yzDurum().then((x) => { D.yzDurum = x; sonraCiz(); }); }
+    if (zayif && yzBagli && !yzS) { const soru = D.sorgu; D.sorguYz = { soru, bekliyor: true }; setTimeout(() => yzSorguYorumla(soru), 0); }
+    const r = yzS?.filtre || kural;
     const KONU = { durusma: 'duruşmalar', tebligat: 'tebligatlar', evrak: 'evrak', sure: 'son günler', para: 'masraf ve avans', muvekkil: 'müvekkiller', dosya: 'dosyalar', ajanda: 'o günlerin işleri' };
     const cipler = [`Konu: ${KONU[r.konu]}`];
     if (r.zaman) cipler.push(`Zaman: ${r.zaman.etiket} (${UA.trTarih(r.zaman.bas)} – ${UA.trTarih(r.zaman.bit)})`);
     if (r.tur) cipler.push(`Tür: ${r.tur}`);
     for (const m of r.muvekkiller) cipler.push(`Müvekkil: ${m}`);
-    for (const b of r.birimler) cipler.push(`Mahkeme: ${b}`);
+    if (r.birimler.length) cipler.push(`Mahkeme: ${r.birimler.join(r.birimVeya ? ' ya da ' : ' ve ')}`);
     if (r.dosyaNo) cipler.push(`Dosya: ${r.dosyaNo}`);
     const DUR = { avansEksi: 'avansı biten', okunmamis: 'okunmamış', belgesiz: 'belgesi eksik', suresiz: 'son günü girilmemiş', uyumsuz: 'tarihi uyumsuz', kapali: 'kapalı' };
-    for (const k of Object.keys(r.durum)) cipler.push(`Durum: ${DUR[k]}`);
+    for (const k of Object.keys(r.durum)) cipler.push(`Durum: ${DUR[k] || k}`);
+    if (r.durusma) cipler.push(r.durusma === 'var' ? 'Yaklaşan duruşması olan' : 'Yaklaşan duruşması olmayan');
+    if ((r.dosyaDurumlari || []).length) cipler.push(`Dosya durumu: ${r.dosyaDurumlari.join(' ya da ')}`);
+    for (const x of r.evrakVar || []) cipler.push(`Evrak var: ${x}`);
+    for (const x of r.evrakYok || []) cipler.push(`Evrak yok: ${x}`);
+    if (r.sirala) cipler.push(`Sıra: ${{ masraf: 'en çok masraf', bakiye: 'bakiye', tarih: 'tarih' }[r.sirala] || r.sirala}${r.limit ? ', ilk ' + r.limit : ''}`);
 
     const dosyaUyar = (id) => {
       const d = D.db.dosyalar[id]; if (!d) return false;
       const e = D.elle.dosyalar[id] || {};
       if (r.tur === 'icra' && !UA.normal(d.dosyaTur).includes('icra')) return false;
       if (r.tur === 'hukuk' && UA.normal(d.dosyaTur).includes('icra')) return false;
+      if ((r.tur === 'ceza' || r.tur === 'idare') && !UA.normal(d.dosyaTur).includes(r.tur)) return false;
+      if (r.durusma === 'var' && !sonrakiDurusma()[id]) return false;
+      if (r.durusma === 'yok' && sonrakiDurusma()[id]) return false;
+      if ((r.dosyaDurumlari || []).length && !r.dosyaDurumlari.some((x) => UA.normal(d.dosyaDurum).includes(x))) return false;
+      if ((r.evrakVar || []).length || (r.evrakYok || []).length) {
+        const metin = (dosyaEvraki()[id] || []).map((x) => UA.normal(`${x.tur} ${x.tip || ''} ${x.aciklama || ''}`)).join(' | ');
+        if (!(r.evrakVar || []).every((k) => metin.includes(k))) return false;
+        if ((r.evrakYok || []).some((k) => metin.includes(k))) return false;
+      }
       if (r.muvekkiller.length && !r.muvekkiller.includes(e.muvekkil)) return false;
-      if (r.birimler.length && !r.birimler.every((b) => UA.normal(d.birimAdi).includes(b))) return false;
+      if (r.birimler.length && !(r.birimVeya ? r.birimler.some : r.birimler.every).call(r.birimler, (b) => UA.normal(d.birimAdi).includes(b))) return false;
       if (r.dosyaNo && d.dosyaNo !== r.dosyaNo) return false;
       return true;
     };
@@ -271,7 +354,7 @@
     else if (r.konu === 'sure' && r.durum.suresiz) { const l = suresizTebligat().filter((e) => dosyaUyar(evrakDosya(e))); sayi = l.length; govde = l.length ? `<div class="blok"><h2>Son günü girilmemiş tebligatlar (${l.length})</h2><ul class="liste">${l.map((e) => evrakSatiri(e)).join('')}</ul></div>` : ''; }
     else if (r.konu === 'sure') govde = sureListe(r.zaman);
     else if (r.konu === 'tebligat') govde = evrakListe(UA.tebligatMi, r.zaman || { bas: new Date(bugun().getTime() - 30 * 864e5), bit: bugun() }, 'Tebligatlar');
-    else if (r.konu === 'evrak') govde = evrakListe((e) => (r.durum.okunmamis ? e.yeni && !D.elle.okundu[e.evrakId] : true), r.zaman, r.durum.okunmamis ? 'Okunmamış evrak' : 'Evrak');
+    else if (r.konu === 'evrak') govde = evrakListe((e) => (r.durum.okunmamis ? e.yeni && !D.elle.okundu[e.evrakId] : true) && (!(r.evrakVar || []).length || r.evrakVar.some((k) => UA.normal(`${e.tur} ${e.aciklama || ''}`).includes(k))), r.zaman, r.durum.okunmamis ? 'Okunmamış evrak' : 'Evrak');
     else if (r.konu === 'ajanda') { govde = durusmaListe(r.zaman) + sureListe(r.zaman) + evrakListe(() => true, r.zaman, 'Gelen evrak'); }
     else if (r.konu === 'para' && r.durum.belgesiz) {
       const l = Object.keys(D.db.dosyalar).filter(dosyaUyar).flatMap((id) => paraOzet(id).hareketler.filter((h) => h.tur === 'gider' && !h.belge).map((h) => ({ id, h })));
@@ -281,25 +364,34 @@
       if (r.hedefMuvekkil || r.konu === 'muvekkil') {
         let l = muvekkiller().filter((m) => !r.muvekkiller.length || r.muvekkiller.includes(m.ad)).map((m) => ({ m, f: finans(m.dosyalar.filter(dosyaUyar)) }));
         if (r.durum.avansEksi) l = l.filter((x) => x.f.bekleyen > 0);
+        if (r.sirala === 'masraf') l.sort((a, b) => b.f.masraf - a.f.masraf); else if (r.sirala === 'bakiye') l.sort((a, b) => b.f.bekleyen - a.f.bekleyen);
+        if (r.limit) l = l.slice(0, r.limit);
         sayi = l.length;
         govde = l.length ? `<div class="tablo"><table><thead><tr><th>Müvekkil</th><th class="sayi">Dosya</th><th class="sayi">Toplam masraf</th><th class="sayi">Kullanılabilir avans</th><th class="sayi">Tahsil edilecek</th></tr></thead><tbody>${l.map(({ m, f }) => `<tr class="tikla" data-eylem="muvekkil" data-id="${esc(m.id)}"><td><b>${esc(m.ad)}</b></td><td class="sayi">${m.dosyalar.length}</td><td class="sayi">${UA.tl(f.masraf)}</td><td class="sayi">${UA.tl(f.kullanilabilir)}</td><td class="sayi ${f.bekleyen ? 'eksi' : ''}">${UA.tl(f.bekleyen)}</td></tr>`).join('')}</tbody></table></div>` : '';
       } else {
         let l = Object.keys(D.db.dosyalar).filter(dosyaUyar).map((id) => ({ id, p: paraOzet(id) })).filter((x) => x.p.hareketVar);
         if (r.durum.avansEksi) l = l.filter((x) => x.p.bakiye < 0);
+        if (r.sirala === 'masraf') l = Object.keys(D.db.dosyalar).filter(dosyaUyar).map((id) => ({ id, p: paraOzet(id) })).filter((x) => x.p.toplamMasraf > 0).sort((a, b) => b.p.toplamMasraf - a.p.toplamMasraf);
+        if (r.limit) l = l.slice(0, r.limit);
         sayi = l.length;
         govde = l.length ? paraTablosu(l) : '';
       }
     } else {
-      const l = Object.values(D.db.dosyalar).filter((d) => dosyaUyar(d.dosyaId) && (!r.durum.kapali || /kapal/i.test(d.dosyaDurum || '')));
+      let l = Object.values(D.db.dosyalar).filter((d) => dosyaUyar(d.dosyaId) && (!r.durum.kapali || /kapal/i.test(d.dosyaDurum || '')));
+      if (r.limit) l = l.slice(0, r.limit);
       sayi = l.length;
       govde = l.length ? dosyaTablosu(l) : '';
     }
     return `<div class="baslik"><div><h1>Sorgu</h1><div class="soluk">“${esc(D.sorgu)}”</div></div></div>
       ${sorguKutusu(false)}
-      <div class="anlasilan"><span class="kucuk soluk">Asistanın anladığı:</span> ${cipler.map((c) => `<span class="cip sabit">${esc(c)}</span>`).join('')} <span class="kucuk soluk">· ${sayi} sonuç</span></div>
+      ${yzS?.bekliyor ? '<div class="kontrol erken alt-bosluk">Bu soruyu kurallarla anlayamadım; Claude yorumluyor… (birkaç saniye)</div>' : ''}
+      ${yzS?.onayGerek ? `<div class="kontrol erken alt-bosluk">Soruda maskelenemeyen bir ad olabilir: <b>${yzS.supheli.map((x) => esc(x.deger)).join(', ')}</b>. Claude'a şu hâliyle gidecek: “${esc(yzS.maskeli)}”. <button class="dugme" data-eylem="sorgu-yz-gonder">Yine de Claude'a sor</button></div>` : ''}
+      ${yzS?.hata ? `<div class="kontrol gec alt-bosluk">Claude soruyu yorumlayamadı: ${esc(yzS.hata)} Kurallarla anlaşılan sonuç gösteriliyor.</div>` : ''}
+      ${r.yz && r.anlasilan ? `<div class="kontrol uyumlu alt-bosluk"><b>Claude'un anladığı:</b> ${esc(r.anlasilan)} <span class="kucuk soluk">(Claude'a yalnız soru gitti: “${esc(yzS.maskeli)}”; arama bu bilgisayarda yapıldı.)</span></div>` : ''}
+      <div class="anlasilan"><span class="kucuk soluk">${r.yz ? 'Süzgeç:' : 'Asistanın anladığı:'}</span> ${cipler.map((c) => `<span class="cip sabit">${esc(c)}</span>`).join('')} <span class="kucuk soluk">· ${sayi} sonuç</span>${yzBagli && !yzS?.bekliyor && !r.yz ? ' <button class="link" data-eylem="sorgu-yz">Claude ile yorumla</button>' : ''}</div>
       ${govde || bos('Bu soruya uyan kayıt bulunamadı. Soruyu farklı sözcüklerle deneyin ya da aşağıdaki örneklerden birini seçin.')}
       <div class="oneriler">${UA.ORNEK_SORULAR.map((q) => `<button class="cip" data-sor="${esc(q)}">${esc(q)}</button>`).join('')}</div>
-      <p class="kucuk soluk">Sorular bu bilgisayarda çözülür, hiçbir yere gönderilmez. Bu sürüm tarih, konu, müvekkil, mahkeme ve dosya numarası ifadelerini tanır.</p>`;
+      <p class="kucuk soluk">Sorular önce bu bilgisayarda kurallarla çözülür. Kurallar anlamazsa${yzBagli ? '' : ' (yapay zekâ bağlıyken)'} yalnız soru, adlar maskelenerek Claude'a gider; Claude bir süzgeç döndürür, arama ve sonuçlar bu bilgisayarda kalır.</p>`;
   }
 
   // ---------- duruşmalar ----------
@@ -962,6 +1054,8 @@ Kurallar:
       }
       case 'belge-ac': return dosyaAc(t.dataset.b, t.dataset.ad);
       case 'yz-yenile': D.yzDurum = await yzDurum(true); return ciz();
+      case 'sorgu-yz': return yzSorguYorumla(D.sorgu);
+      case 'sorgu-yz-gonder': return yzSorguYorumla(D.sorgu, true);
       case 'dl-gonder': {
         const k = D.dilekce; if (!k?.hazirlik || !k.onay || k.bekliyor) return;
         k.bekliyor = true; k.hata = null; ciz();
