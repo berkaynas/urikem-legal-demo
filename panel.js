@@ -733,7 +733,8 @@ Kurallar:
     const ekler = [...(v.ekler || []), ...vekiller.map((x, i) => `[Vekil ${i + 1}] = ${x}`)];
     return { metin: satir.join('\n'), liste: kisiListesi(did, e.muvekkil, ekler) };
   }
-  const atifBul = (t) => [...new Set((String(t).match(/[^\n]{0,90}\b\d{4}\s*\/\s*\d+\s*E\.?[^\n]{0,40}?\d{4}\s*\/\s*\d+\s*K\.?[^\n]{0,40}/g) || []).map((x) => x.trim()))];
+  // Karar künyesi geçen satırları bul (… 2019/1234 E., 2020/5678 K. …); satırın tamamını göster, uzunsa kısalt.
+  const atifBul = (t) => [...new Set(String(t).split('\n').filter((x) => /\b\d{4}\s*\/\s*\d+\s*E\.?[^\n]*?\d{4}\s*\/\s*\d+\s*K\.?/.test(x)).map((x) => { x = x.trim(); return x.length > 220 ? x.slice(0, 217) + '…' : x; }))];
 
   function dilekceSayfa() {
     const k = (D.dilekce = D.dilekce || { mod: 'yeni', tur: DILEKCE_TURLERI[0] });
@@ -768,7 +769,7 @@ Kurallar:
             ${k.hata ? `<div class="kontrol gec ust-bosluk">${esc(k.hata)}</div>` : ''}
           </div>` : bos('Formu doldurup "Gönderilecek metni hazırla"ya basın. Claude\'a gidecek maskeli metni burada görüp onaylarsınız.')}
           ${k.cevap != null ? `<div class="blok"><div class="baslik kucuk-baslik"><h2>3. Dilekçe</h2>${k.demoCikti ? '<span class="rozet r-gri">Demo örneği</span>' : ''}</div>
-            ${k.atiflar?.length ? `<div class="kontrol gec alt-bosluk"><b>Doğrulanmamış ${k.atiflar.length} karar atfı var.</b> Kullanmadan önce her birini resmî kaynaktan kontrol edin; yapay zekâ karar uydurabilir.<ul>${k.atiflar.map((x) => `<li class="kucuk">${esc(x)}</li>`).join('')}</ul></div>` : ''}
+            ${k.atiflar?.length ? `<div class="kontrol gec alt-bosluk"><b>Doğrulanmamış ${k.atiflar.length} karar atfı var.</b> Yapay zekâ gerçekte olmayan karar numarası yazabilir. Her birini esas ve karar numarasıyla Yargıtay Karar Arama (karararama.yargitay.gov.tr) ya da UYAP Emsal (emsal.uyap.gov.tr) üzerinde arayın; bulamazsanız ya da karar o yönde değilse o cümleyi silin.<ul>${k.atiflar.map((x) => `<li class="kucuk">${esc(x)}</li>`).join('')}</ul></div>` : ''}
             ${k.kalanEtiket?.length ? `<div class="kontrol erken alt-bosluk">Çevrilemeyen etiketler: ${k.kalanEtiket.map(esc).join(', ')}. Bunları elle doldurun.</div>` : ''}
             <label class="dikey">Düzenleyebilirsiniz<textarea id="dl-cikti" data-eylem="dl-duzenle" rows="22">${esc(k.cevap)}</textarea></label>
             <div class="yan ust-bosluk"><button class="dugme" data-eylem="dl-kopyala">Kopyala</button>${indirmeVar ? '<button class="ikincil" data-eylem="dl-word">Word olarak indir</button>' : ''}${did ? '<button class="ikincil" data-eylem="dl-kaydet">Dosyaya taslak olarak kaydet</button>' : ''}<button class="ikincil" data-eylem="dl-yeni">Yeni dilekçe</button></div>
