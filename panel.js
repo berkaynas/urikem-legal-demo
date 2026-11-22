@@ -787,6 +787,8 @@ Köşeli parantezli etiketler gizlenmiş adlardır; aynen kullan. Emin olmadığ
     yzSonSoru = Date.now();
     yzDurum(true).then((x) => { const degisti = JSON.stringify(x) !== JSON.stringify(D.yzDurum); D.yzDurum = x; if (degisti) sonraCiz(); });
   }
+  // Dilekçe ya da arama sayfası açıkken bağlantı yoksa 10 saniyede bir kendiliğinden yeniden dene
+  setInterval(() => { if (D.mod !== 'demo' && ['dilekce', 'sorgu'].includes(D.sayfa) && !(D.yzDurum?.hazir && D.yzDurum?.giris)) yzDurumTazele(); }, 10000);
   async function yzUret(sistem, metin, efor = 'high') {
     const r = await fetch(YZ_ADRES + '/uret', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sistem, metin, efor }), signal: AbortSignal.timeout(6 * 60 * 1000) });
     const j = await r.json().catch(() => ({ hata: 'Köprüden geçersiz cevap.' }));
