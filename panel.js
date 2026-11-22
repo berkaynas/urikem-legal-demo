@@ -787,39 +787,6 @@ Kurallar:
     k.atiflar = atifBul(k.cevap);
   }
 
-  // ---------- metni anonimleştir ----------
-  // Avukat dilekçeyi, notu ya da evrakı yapay zekâya vermeden önce burada maskeler. Her şey bu bilgisayarda olur;
-  // metin ve eşleme kaydedilmez, sayfa kapanınca silinir.
-  function anonimSayfa() {
-    const a = D.anon || {};
-    const r = a.sonuc;
-    const dosyaSecenek = Object.keys(D.db.dosyalar).sort((x, y) => (acikMi(y) - acikMi(x)) || dosyaAdi(x).localeCompare(dosyaAdi(y), 'tr')).map((x) => `<option value="${esc(dosyaAdi(x))}">`).join('');
-    const etiketler = r ? Object.entries({ ...Object.fromEntries(String(r.liste || '').split('\n').filter(Boolean).map((x) => { const m = x.match(/^(\[[^\]]+\])\s*=\s*([^;]+)/); return m ? [m[1], m[2].trim()] : null; }).filter(Boolean)), ...(r.esleme || {}) }).filter(([k]) => r.anonim.includes(k)) : [];
-    return `<div class="baslik"><div><h1>Metni anonimleştir</h1><div class="soluk">Dilekçeyi, notu ya da evrakı bir yapay zekâya vermeden önce burada maskeleyin. Maskeleme bu bilgisayarda, Kartı Anonimleştirme Aracı'nın kurallarıyla yapılır; metin hiçbir yere gönderilmez ve kaydedilmez.</div></div></div>
-      <div class="iki">
-        <form class="blok" data-form="anon"><h2>1. Metin</h2>
-          <label class="dikey">Dosya (isteğe bağlı)<input name="dosya" id="an-dosya" list="an-dosyalar" value="${esc(a.dosya || '')}" placeholder="Mahkeme ve dosya no ile arayın"><datalist id="an-dosyalar">${dosyaSecenek}</datalist><span class="kucuk soluk">Seçerseniz o dosyanın müvekkili, karşı tarafları ve sizin adınız da maskelenir.</span></label>
-          <label class="dikey">Ayrıca gizlenecek adlar<textarea name="ekler" id="an-ekler" rows="2" placeholder="Her satıra bir ad: tanık, şirket, yer…">${esc((a.ekler || []).join('\n'))}</textarea></label>
-          <label class="dikey">Metin<textarea name="metin" id="an-metin" rows="14" required placeholder="Dilekçe, not ya da evrak metnini buraya yapıştırın">${esc(a.metin || '')}</textarea></label>
-          <span class="yan"><button class="dugme">Anonimleştir</button>${a.metin ? '<button type="button" class="ikincil" data-eylem="anon-temizle">Temizle</button>' : ''}</span>
-          <p class="kucuk soluk">TC kimlik, vergi no, telefon, IBAN, e-posta, adres, şirket unvanı, dosya ve esas numarası ile ada/parsel kendiliğinden maskelenir; kişi adları dosyadan ve yukarıdaki listeden gelir.</p>
-        </form>
-        <div>${r ? `
-          <div class="blok"><div class="baslik kucuk-baslik"><h2>2. Maskeli metin</h2><span class="kucuk soluk">${r.sayi} yer maskelendi</span></div>
-            <div class="transkript anonim">${isaretle(r.anonim)}</div>
-            ${supheliSuz(r.supheliler, r.anonim).length ? `<div class="kontrol erken ust-bosluk"><b>Gözden kaçmış olabilecekler:</b> ${supheliSuz(r.supheliler, r.anonim).map((x) => `${esc(x.deger)} (${esc(String(x.tur).toLocaleLowerCase('tr-TR'))})`).join(', ')}. Bunlar bir kişiye aitse "Ayrıca gizlenecek adlar"a ekleyip yeniden anonimleştirin.</div>` : '<div class="kontrol uyumlu ust-bosluk">Metinde kalmış bir ad ya da numara bulunamadı. Yine de göndermeden önce okuyun.</div>'}
-            <div class="yan ust-bosluk"><button class="dugme" data-eylem="anon-kopyala">Maskeli metni kopyala</button></div>
-            ${etiketler.length ? `<details class="ust-bosluk"><summary class="kucuk">Etiketlerin karşılığı (yalnız bu bilgisayarda)</summary><div class="tablo"><table><tbody>${etiketler.map(([k, v]) => `<tr><td><mark>${esc(k)}</mark></td><td>${esc(v)}</td></tr>`).join('')}</tbody></table></div></details>` : ''}
-          </div>
-          <form class="blok" data-form="anon-geri"><h2>3. Yapay zekânın cevabı</h2>
-            <label class="dikey">Cevabı buraya yapıştırın<textarea name="cevap" id="an-cevap" rows="8" placeholder="[Müvekkil], [Karşı taraf A] gibi etiketler gerçek adlara çevrilir">${esc(a.cevap || '')}</textarea></label>
-            <button class="dugme">Adları geri koy</button>
-            ${a.geri != null ? `<div class="transkript ust-bosluk">${esc(a.geri).replace(/\n/g, '<br>')}</div><div class="yan ust-bosluk"><button class="ikincil" data-eylem="anon-geri-kopyala">Metni kopyala</button></div>` : ''}
-          </form>` : bos('Metni yapıştırıp "Anonimleştir"e basın. Maskeli hâli burada görünür; kopyalayıp istediğiniz yapay zekâya verebilirsiniz.')}
-        </div>
-      </div>`;
-  }
-
   // ---------- hatırlatmalar ----------
   function epostaMetni() {
     const t = (d) => UA.trTarih(d).slice(0, 5);
@@ -910,7 +877,7 @@ Kurallar:
   }
 
   // ---------- çizim ----------
-  const SAYFALAR = { ozet, sorgu: sorguSayfa, durusma: durusmaSayfa, evrak: evrakSayfa, muvekkil: muvekkilSayfa, dosya: dosyaSayfa, para: paraSayfa, gorusme: gorusmeSayfa, dilekce: dilekceSayfa, anonim: anonimSayfa, hatirlatma: hatirlatmaSayfa };
+  const SAYFALAR = { ozet, sorgu: sorguSayfa, durusma: durusmaSayfa, evrak: evrakSayfa, muvekkil: muvekkilSayfa, dosya: dosyaSayfa, para: paraSayfa, gorusme: gorusmeSayfa, dilekce: dilekceSayfa, hatirlatma: hatirlatmaSayfa };
   function ciz() {
     nesil++;
     document.body.dataset.ekran = D.gorunum;
@@ -992,9 +959,6 @@ Kurallar:
         return kopyala(tsv([['Tarih', 'Dosya', 'Açıklama', 'Tutar', 'Bakiye'], ...rows]), 'Hesap dökümü kopyalandı. Excel\'e yapıştırın.');
       }
       case 'belge-ac': return dosyaAc(t.dataset.b, t.dataset.ad);
-      case 'anon-kopyala': return D.anon?.sonuc ? kopyala(D.anon.sonuc.anonim, 'Maskeli metin kopyalandı.') : undefined;
-      case 'anon-geri-kopyala': return D.anon?.geri != null ? kopyala(D.anon.geri, 'Metin kopyalandı.') : undefined;
-      case 'anon-temizle': D.anon = null; return ciz();
       case 'yz-yenile': D.yzDurum = await yzDurum(true); return ciz();
       case 'dl-gonder': {
         const k = D.dilekce; if (!k?.hazirlik || !k.onay || k.bekliyor) return;
@@ -1116,21 +1080,6 @@ Kurallar:
         const ist = dilekceIstegi(did, k);
         try { k.hazirlik = { sonuc: UA.anonimlestir(ist.metin, ist.liste) }; } catch (e) { return bildir('Metin maskelenemedi: ' + e.message); }
         D.dilekce = k; return ciz();
-      }
-      case 'anon': {
-        const ekler = String(v.ekler || '').split(/\n+/).map((x) => x.trim()).filter(Boolean);
-        const did = v.dosya && Object.keys(D.db.dosyalar).find((x) => dosyaAdi(x) === v.dosya.trim());
-        const liste = kisiListesi(did || null, did ? D.elle.dosyalar[did]?.muvekkil : null, ekler);
-        try { D.anon = { dosya: v.dosya || '', ekler, metin: v.metin, sonuc: UA.anonimlestir(v.metin, liste), cevap: '', geri: null }; }
-        catch (e) { return bildir('Metin maskelenemedi: ' + e.message); }
-        if (v.dosya && !did) bildir('Dosya bulunamadı; yalnız kalıplar ve eklediğiniz adlar maskelendi.');
-        return ciz();
-      }
-      case 'anon-geri': {
-        if (!D.anon?.sonuc) return;
-        D.anon.cevap = v.cevap || '';
-        try { D.anon.geri = UA.geriCevir(D.anon.cevap, D.anon.sonuc); } catch (e) { return bildir('Çevrilemedi: ' + e.message); }
-        return ciz();
       }
       case 'devralma': dosyaElle(id).devralma = v.tarih || null; iz(id, v.tarih ? `Dosyayı alma tarihi: ${UA.trTarih(UA.tarihCoz(v.tarih))}` : 'Dosyayı alma tarihi silindi (ilk ödeme kullanılacak)'); bildir('Kaydedildi.'); return kaydet();
       case 'sorumlu': dosyaElle(id).sorumlu = (v.sorumlu || '').trim() || null; iz(id, `Sorumlu avukat: ${(v.sorumlu || '').trim() || '—'}`); bildir('Sorumlu avukat kaydedildi.'); return kaydet();
