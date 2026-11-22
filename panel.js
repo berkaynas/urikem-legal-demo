@@ -398,7 +398,7 @@
         ${kart('Tahsil edilecek', UA.tl(f.bekleyen), 'Avansı aşan masraf', f.bekleyen > 0)}
       </div>
       <div class="blok"><h2>Dosyaları</h2>${m.dosyalar.length ? dosyaTablosu(m.dosyalar.map((x) => D.db.dosyalar[x]), true) : bos('Dosya yok.')}</div>
-      <div class="blok"><h2>Müvekkil geçmişi</h2>${kr.length ? `<ol class="kronoloji">${kr.map((k) => `<li><span class="tarih">${UA.trTarih(UA.tarihCoz(k.tarih))}</span><span>${esc(k.olay)}<span class="kucuk soluk blok-satir">Kaynak: ${esc(k.kaynak)}</span></span></li>`).join('')}</ol>` : bos('Henüz kayıt yok. Onaylanan görüşme özetleri buraya eklenir.')}</div>
+      <div class="blok"><h2>Müvekkil geçmişi</h2>${kr.length ? `<ol class="kronoloji">${kr.map((k) => `<li><span class="tarih">${UA.trTarih(UA.tarihCoz(k.tarih))}</span><span>${esc(k.olay)}<span class="kucuk soluk blok-satir">Kaynak: ${esc(k.kaynak)}</span></span></li>`).join('')}</ol>` : bos('Henüz kayıt yok.')}</div>
       ${m.sanal ? '' : `<button class="ikincil" data-eylem="portal-onizle" data-id="${esc(m.id)}">Müvekkil portalını bu müvekkil gibi görüntüle</button>`}
     </div>`;
   }
@@ -564,6 +564,8 @@
     }
   }
 
+  // Görüşme kaydı şimdilik menüde yok (Berk, 2026-11-23): ses→metin ve konuşmacı ayırma ayrı bir teknik iş, öncelik değil.
+  // Geri açmak için panel.html menüsüne data-sayfa="gorusme" düğmesini eklemek yeter.
   function gorusmeSayfa() {
     const l = D.elle.gorusmeler || [];
     const g = l.find((x) => x.id === D.gorusme) || l[0];
@@ -818,7 +820,6 @@ Kurallar:
           <form class="blok" data-form="ayarlar"><h2>Ayarlar</h2>
             <label class="dikey">UYAP'ta görünen adınız<input name="avukatAdi" id="a-ad" value="${esc(a.avukatAdi || '')}" placeholder="ör. Ayşe Yılmaz"><span class="kucuk soluk">Müvekkillerinizi Taraflar sekmesindeki vekil bilgisinden tanımak için.</span></label>
             <label class="dikey">Büromuzda ödeme yapanlar<textarea name="buro" id="a-buro" rows="3" placeholder="Her satıra bir ad: ortak avukat, stajyer, sekreter…">${esc((a.buro || []).join('\n'))}</textarea><span class="kucuk soluk">UYAP'ta ödeyeni bu adlardan biri olan masraflar da büronun masrafı sayılır.</span></label>
-            <label class="dikey">Görüşme ses kayıtları kaç gün sonra silinsin?<input type="number" min="1" max="3650" name="sesSaklamaGun" id="a-ses" value="${esc(a.sesSaklamaGun || '')}" placeholder="Boş: elle silinir" class="orta"></label>
             <label class="dikey">Hatırlatmaların gideceği adres<input type="email" name="eposta" id="a-eposta" value="${esc(a.eposta)}" placeholder="avukat@buro.com"></label>
             <label class="dikey">Sorumlu ortak (son gün sabahı)<input type="email" name="ortakEposta" id="a-ortak" value="${esc(a.ortakEposta)}" placeholder="ortak@buro.com"></label>
             <label class="dikey">Sabah özeti saati<input type="time" name="saat" id="a-saat" value="${esc(a.saat)}"></label>
@@ -1102,7 +1103,7 @@ Kurallar:
         D.ozetAcik = true; return kaydet();
       }
       case 'ayarlar':
-        D.elle.ayarlar = { avukatAdi: (v.avukatAdi || '').trim(), buro: String(v.buro || '').split(/\n+/).map((x) => x.trim()).filter(Boolean), sesSaklamaGun: +v.sesSaklamaGun || null, eposta: v.eposta, ortakEposta: v.ortakEposta, saat: v.saat, kademeler: [14, 7, 3, 1].filter((k) => fd.get('k-' + k) === 'on'), gunlukOzet: fd.get('gunlukOzet') === 'on', ortagaBildir: fd.get('ortagaBildir') === 'on' };
+        D.elle.ayarlar = { avukatAdi: (v.avukatAdi || '').trim(), buro: String(v.buro || '').split(/\n+/).map((x) => x.trim()).filter(Boolean), sesSaklamaGun: D.elle.ayarlar?.sesSaklamaGun || null, eposta: v.eposta, ortakEposta: v.ortakEposta, saat: v.saat, kademeler: [14, 7, 3, 1].filter((k) => fd.get('k-' + k) === 'on'), gunlukOzet: fd.get('gunlukOzet') === 'on', ortagaBildir: fd.get('ortagaBildir') === 'on' };
         if (D.mod === 'canli' && D.elle.ayarlar.avukatAdi) UA.otoMuvekkil(D.db, D.elle, D.elle.ayarlar.avukatAdi);
         if (eklentide && chrome.runtime?.sendMessage) chrome.runtime.sendMessage({ tur: 'alarm-kur' }).catch(() => {});
         iz(null, 'Ayarlar değişti'); bildir('Ayarlar kaydedildi.'); return kaydet();
