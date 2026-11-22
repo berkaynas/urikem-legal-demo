@@ -614,12 +614,24 @@
     let i = 0;
     for (const t of taraf) if (UA.normal(t.adi) !== UA.normal(muvAd)) satir.push(`[Karşı taraf ${String.fromCharCode(65 + (i++ % 26))}${i > 26 ? Math.ceil(i / 26) : ''}] = ${ad(t.adi)}`);
     const avk = D.elle.ayarlar?.avukatAdi || (D.elle.dosyalar[dosyaId]?.bizimAdlar || [])[0];
-    if (avk) satir.push(`[Avukat] = ${avk}`);
+    if (avk) { const yalin = String(avk).replace(/^\s*av\.?\s*/i, '').trim(); satir.push(`[Avukat] = ${yalin}${yalin !== avk ? '; ' + avk : ''}`); }
     ekler.forEach((x, k) => satir.push(/^\s*\[[^\]]+\]\s*=/.test(x) ? x : `[Kişi ${k + 1}] = ${ad(x)}`));
     return satir.join('\n');
   }
   const anonimListe = (g) => kisiListesi(g.dosyaId, muvekkilBul(g.muvekkilId)?.ad);
   const anonimHazirla = (g) => UA.anonimlestir((g.transkript || []).map(([k, x]) => `${k}: ${x}`).join('\n'), anonimListe(g));
+  // "Gözden kaçmış olabilir" uyarısından, yalnız hukuk/UYAP terimlerinden oluşan ifadeleri çıkar (Dava Dosyası, Tebliğ Mazbatası…).
+  const HUKUK_TERIM = new Set('dosya dosyası dosyasi bilgileri bilgisi dava davası davasi dilekçe dilekçesi tebliğ tebliği tebligat mazbata mazbatası tutanak tutanağı tutanagi inceleme ön karar kararı ara rapor raporu bilirkişi bilirkişinin duruşma duruşması duruşmasi tahkikat hukuk asliye ticaret iş icra ceza idare vergi sulh mahkeme mahkemesi dairesi daire genel kurul yargıtay danıştay bölge adliye istinaf temyiz cevap replik düplik beyan itiraz istem talep sonuç açıklamalar deliller tanık listesi liste ihtarname vekalet vekâlet vekaletname harç gider avans masraf makbuz tahsilat reddiyat müzekkere yazı cevabı tensip zaptı zabıt keşif ihale satış haciz ödeme emri takip talebi kesin süre uyap e-tebliğ kapalı açık'.split(' '));
+  // Kartı'nın kuralı cümle başındaki büyük harfli ikilileri atlar ("…yapıldı. Ayşe Demir de…"); onları da uyarıya ekle.
+  const CUMLE_BASI_GENEL = new Set('bu şu o bir her hiç ancak ayrıca ayrica fakat ama ve veya ile ki çünkü cunku zira dolayısıyla dolayisiyla buna göre gore sayın sayin yukarıda yukarida aşağıda asagida müvekkil müvekkilimiz davacı davalı davali davaci karşı taraf vekil vekili sonuç sonuc saygılarımızla tarih imza ek ekler not sonra önce once daha bey hanım hanim efendi'.split(' '));
+  const cumleBasiAdlar = (t) => [...String(t || '').replace(/\[[^\]\n]{1,40}\]/g, (x) => ' '.repeat(x.length)).matchAll(/(?:^|[.!?:]\s+|\n\s*)([A-ZÇĞİÖŞÜ][a-zçğıöşü]{2,}[ \t]+[A-ZÇĞİÖŞÜ][a-zçğıöşü]{2,})(?=[\s,.;:!?)]|$)/g)]
+    .map((m) => m[1]).filter((x) => !x.toLocaleLowerCase('tr-TR').split(/\s+/).some((w) => CUMLE_BASI_GENEL.has(w)))
+    .map((deger) => ({ tur: 'Cümle başında ad olabilir', deger }));
+  const supheliSuz = (l, metin) => {
+    const hepsi = [...(l || []), ...cumleBasiAdlar(metin)], gor = new Set();
+    return hepsi.filter((x) => { const k = UA.normal(x.deger); if (gor.has(k)) return false; gor.add(k); return true; })
+      .filter((x) => !String(x.deger).toLocaleLowerCase('tr-TR').split(/[\s.,;:/-]+/).filter(Boolean).every((w) => HUKUK_TERIM.has(w)));
+  };
   const isaretle = (t) => esc(t).replace(/\[[^\]\n]{1,40}\]/g, (x) => `<mark>${x}</mark>`).replace(/\n/g, '<br>');
 
   function anonimKutusu(g) {
@@ -628,7 +640,7 @@
       <h3>Yapay zekâya gidecek metin</h3>
       <div class="kucuk soluk">Metin bu bilgisayarda, Kartı Anonimleştirme Aracı'nın kurallarıyla maskelendi: ${h.sayi} yer etiketlendi (ad ve unvan, TC kimlik, telefon, IBAN, e-posta, adres, dosya no…). Gerçek değerler bilgisayardan çıkmaz.</div>
       <div class="transkript anonim ust-bosluk">${isaretle(h.anonim)}</div>
-      ${h.supheliler.length ? `<div class="kontrol erken"><b>Gözden kaçmış olabilecekler:</b> ${h.supheliler.map((x) => `${esc(x.deger)} (${esc(x.tur.toLocaleLowerCase('tr-TR'))})`).join(', ')}. Bunlar bir kişiye aitse göndermeyin.</div>` : '<div class="kontrol uyumlu">Metinde kalmış bir ad ya da numara bulunamadı.</div>'}
+      ${supheliSuz(h.supheliler, h.anonim).length ? `<div class="kontrol erken"><b>Gözden kaçmış olabilecekler:</b> ${supheliSuz(h.supheliler, h.anonim).map((x) => `${esc(x.deger)} (${esc(x.tur.toLocaleLowerCase('tr-TR'))})`).join(', ')}. Bunlar bir kişiye aitse göndermeyin.</div>` : '<div class="kontrol uyumlu">Metinde kalmış bir ad ya da numara bulunamadı.</div>'}
       <label class="secim ust-bosluk"><input type="checkbox" id="anonim-onay-${esc(g.id)}" data-eylem="anonim-onay" ${D.anonimOnay ? 'checked' : ''}> Metni okudum, kişisel veri kalmadı</label>
       <div class="yan ust-bosluk"><button class="dugme" data-eylem="yz-gonder" data-id="${esc(g.id)}" ${D.anonimOnay ? '' : 'disabled'}>Anonim metni gönder</button><button class="ikincil" data-eylem="anonim-iptal">Vazgeç</button></div>
     </div>`;
@@ -659,6 +671,118 @@
     </form>`;
   }
 
+  // ---------- yapay zekâ bağlantısı ----------
+  // DENEME: istek bu bilgisayardaki köprüye (urikem-yz/kopru.mjs) gider, köprü oturum açılmış Claude Code'u çağırır.
+  // Satılan üründe burası Claude API'ye bağlanacak; panelin geri kalanı değişmez.
+  const YZ_ADRES = 'http://127.0.0.1:47811';
+  let yzDurumBellek = null;
+  async function yzDurum(tazele) {
+    if (!tazele && yzDurumBellek && Date.now() - yzDurumBellek.zaman < 30000) return yzDurumBellek.deger;
+    let deger;
+    try { const r = await fetch(YZ_ADRES + '/durum', { signal: AbortSignal.timeout(4000) }); deger = r.ok ? await r.json() : { hazir: false }; }
+    catch (_) { deger = { hazir: false }; }
+    yzDurumBellek = { zaman: Date.now(), deger };
+    return deger;
+  }
+  async function yzUret(sistem, metin, efor = 'high') {
+    const r = await fetch(YZ_ADRES + '/uret', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sistem, metin, efor }), signal: AbortSignal.timeout(6 * 60 * 1000) });
+    const j = await r.json().catch(() => ({ hata: 'Köprüden geçersiz cevap.' }));
+    if (!r.ok || j.hata) throw new Error(j.hata || 'Yapay zekâ cevap vermedi.');
+    return j.metin;
+  }
+
+  // ---------- dilekçe ----------
+  // Akış: dosya + ne yazılacağı → UYAP bilgileriyle istek hazırlanır → bilgisayarda anonimleştirilir →
+  // avukat maskeli metni görüp onaylar → Claude yazar → etiketler bilgisayarda gerçek adlara çevrilir →
+  // atıflar "doğrulanmadı" diye işaretlenir → avukat düzeltip kopyalar, Word olarak indirir ya da dosyaya kaydeder.
+  const DILEKCE_TURLERI = ['Cevap dilekçesi', 'Cevaba cevap (replik) dilekçesi', 'Beyan dilekçesi', 'Bilirkişi raporuna itiraz', 'Tanık listesi', 'İstinaf başvuru dilekçesi', 'Temyiz dilekçesi', 'İcra takibine itiraz', 'İhtarname', 'Diğer'];
+  const DILEKCE_SISTEM = `Türk hukukunda deneyimli bir avukatın yanında çalışan, dilekçe yazan bir yardımcısın. Türkçe yazarsın.
+Kurallar:
+- Metindeki köşeli parantezli etiketler ([Müvekkil], [Karşı taraf A], [Avukat], [Kişi 1], [TCKN-1], [DOSYA NO-1] gibi) gizlenmiş kişisel bilgilerdir. Onları aynen, değiştirmeden kullan; açmaya, tahmin etmeye ya da yeni etiket uydurmaya çalışma.
+- Dilekçeyi mahkemeye sunulabilecek düzende yaz: mahkeme başlığı, dosya numarası, taraflar ve vekilleri, konu, açıklamalar (numaralı paragraflar), hukuki nedenler, deliller, sonuç ve istem, tarih ve imza yeri.
+- Kanun maddesi anabilirsin. Yargıtay, Danıştay ya da bölge adliye mahkemesi kararı anarsan yalnız gerçekten var olduğundan emin olduklarını an ve her birinin sonuna [DOĞRULANMALI] yaz. Karar künyesi uydurma.
+- Süre hesabı yapma, son gün yazma.
+- Bilmediğin olgular için uydurma; [...] ile boş bırak ve avukatın tamamlaması gerektiğini belirt.
+- Yalnız dilekçe metnini yaz; açıklama ya da sohbet ekleme.`;
+  const REVIZE_SISTEM = `Türk hukukunda deneyimli bir avukatın yanında çalışan bir yardımcısın. Avukatın yazdığı dilekçeyi gözden geçirip daha açık, eksiksiz ve usule uygun hâle getirirsin. Türkçe yazarsın.
+Kurallar:
+- Köşeli parantezli etiketleri ([Müvekkil], [Karşı taraf A], [TCKN-1] gibi) aynen koru; açmaya ya da yeni etiket uydurmaya çalışma.
+- Avukatın olgularını ve taleplerini değiştirme; dili, düzeni, eksik bölümleri ve tutarsızlıkları düzelt.
+- Karar künyesi uydurma; yeni andığın her yargı kararının sonuna [DOĞRULANMALI] yaz. Süre hesabı yapma.
+- Önce düzeltilmiş dilekçenin tamamını yaz. Sonra tek başına "---" satırı koy ve altına "Yapılan değişiklikler ve avukatın kontrol etmesi gerekenler" başlığıyla kısa maddeler yaz.`;
+
+  function dilekceIstegi(did, v) {
+    const d = D.db.dosyalar[did] || {}, e = D.elle.dosyalar[did] || {};
+    const taraf = D.db.taraflar[did] || [];
+    const ev = (dosyaEvraki()[did] || []).slice(0, 12);
+    const dr = durusmalar().filter((x) => x.dosyaId === did).slice(0, 2);
+    const satir = ['DOSYA BİLGİLERİ (UYAP)', `Mahkeme: ${d.birimAdi || '—'}`, `Dosya: ${d.dosyaNo || '—'}`, `Dosya türü: ${d.dosyaTur || '—'} · Durum: ${d.dosyaDurum || '—'}`];
+    if (d.davaTurleri) satir.push(`Dava türü: ${d.davaTurleri}`);
+    if (taraf.length) { satir.push('Taraflar:'); for (const t of taraf) satir.push(`- ${t.rol || 'Taraf'}: ${t.adi}${UA.normal(t.adi) === UA.normal(e.muvekkil) ? ' (müvekkilimiz)' : ''}${t.vekil ? ` — vekili: ${t.vekil}` : ''}`); }
+    if (ev.length) { satir.push('Dosyadaki son evrak:'); for (const x of ev) satir.push(`- ${UA.trTarih(x.onayTarihi)} ${x.tur}${x.aciklama && x.aciklama !== x.tur ? ' — ' + x.aciklama : ''}`); }
+    if (dr.length) satir.push('Yaklaşan duruşma: ' + dr.map((x) => `${UA.trTarih(x.tarihSaat)} ${x.islem || ''}`).join('; '));
+    satir.push('', v.mod === 'revize' ? 'İSTEK: Aşağıdaki dilekçeyi gözden geçir ve düzelt.' : `İSTEK: ${v.tur} yaz.`);
+    if (v.talimat) satir.push('Avukatın notları:', v.talimat);
+    if (v.mod === 'revize') satir.push('', 'MEVCUT DİLEKÇE:', v.mevcut || '');
+    // Karşı taraf vekilleri de maskelensin
+    const vekiller = [...new Set(taraf.map((t) => t.vekil).filter(Boolean).flatMap((x) => String(x).split(/,|;| ve /)).map((x) => x.replace(/^\s*av\.?\s*/i, '').trim()).filter((x) => x.length > 4 && !/\*{2,}/.test(x) && UA.normal(x) !== UA.normal(D.elle.ayarlar?.avukatAdi || '')))];
+    const ekler = [...(v.ekler || []), ...vekiller.map((x, i) => `[Vekil ${i + 1}] = ${x}`)];
+    return { metin: satir.join('\n'), liste: kisiListesi(did, e.muvekkil, ekler) };
+  }
+  const atifBul = (t) => [...new Set((String(t).match(/[^\n]{0,90}\b\d{4}\s*\/\s*\d+\s*E\.?[^\n]{0,40}?\d{4}\s*\/\s*\d+\s*K\.?[^\n]{0,40}/g) || []).map((x) => x.trim()))];
+
+  function dilekceSayfa() {
+    const k = (D.dilekce = D.dilekce || { mod: 'yeni', tur: DILEKCE_TURLERI[0] });
+    const yz = D.yzDurum;
+    if (!yz && !D.yzSoruldu) { D.yzSoruldu = true; yzDurum().then((x) => { D.yzDurum = x; sonraCiz(); }); }
+    const did = k.dosya && Object.keys(D.db.dosyalar).find((x) => dosyaAdi(x) === k.dosya);
+    const kayitli = did ? ((D.elle.dilekceler || {})[did] || []) : [];
+    const dosyaSecenek = Object.keys(D.db.dosyalar).sort((x, y) => (acikMi(y) - acikMi(x)) || dosyaAdi(x).localeCompare(dosyaAdi(y), 'tr')).map((x) => `<option value="${esc(dosyaAdi(x))}">`).join('');
+    const yzSatir = yz?.hazir && yz.giris ? `<div class="kontrol uyumlu alt-bosluk"><b>Yapay zekâ bağlı:</b> ${esc(yz.kaynak || 'Claude')}. Claude'a yalnız maskelenmiş metin gider.</div>`
+      : yz?.hazir ? '<div class="kontrol erken alt-bosluk"><b>Claude Code oturumu kapalı.</b> Terminalde <code>claude auth login</code> ile giriş yapın, sonra bu sayfayı yenileyin.</div>'
+      : D.mod === 'demo' ? '<div class="kontrol erken alt-bosluk"><b>Demo:</b> burada gerçek yapay zekâ çağrılmaz; akışı göstermek için örnek bir dilekçe üretilir.</div>'
+      : '<div class="kontrol gec alt-bosluk"><b>Yapay zekâ köprüsü kapalı.</b> <code>urikem-yz/yz-baslat.command</code> dosyasına çift tıklayıp açık bırakın, sonra <button class="link" data-eylem="yz-yenile">yeniden deneyin</button>.</div>';
+    const h = k.hazirlik;
+    return `<div class="baslik"><div><h1>Dilekçe</h1><div class="soluk">Dosyanın UYAP bilgileriyle dilekçe taslağı yazdırın ya da kendi dilekçenizi gözden geçirtin. Müvekkil bilgileri gönderilmeden önce bu bilgisayarda maskelenir; siz onaylamadan hiçbir şey gönderilmez.</div></div></div>
+      ${yzSatir}
+      <div class="iki">
+        <form class="blok" data-form="dilekce"><h2>1. Ne yazılsın?</h2>
+          <fieldset><legend class="gizli">İşlem</legend><span class="yan"><label class="secim"><input type="radio" name="mod" value="yeni" ${k.mod !== 'revize' ? 'checked' : ''}> Yeni taslak</label><label class="secim"><input type="radio" name="mod" value="revize" ${k.mod === 'revize' ? 'checked' : ''}> Dilekçemi gözden geçir</label></span></fieldset>
+          <label class="dikey">Dosya<input name="dosya" id="dl-dosya" list="dl-dosyalar" required value="${esc(k.dosya || '')}" placeholder="Mahkeme ve dosya no ile arayın"><datalist id="dl-dosyalar">${dosyaSecenek}</datalist></label>
+          <label class="dikey">Dilekçe türü<select name="tur" id="dl-tur">${DILEKCE_TURLERI.map((t) => `<option ${t === k.tur ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+          <label class="dikey">Notlarınız: olaylar, talepler, dayanaklar<textarea name="talimat" id="dl-talimat" rows="6" placeholder="ör. Davacı fazla mesai alacağı istiyor; müvekkil şirket fazla mesai yaptırmadığını, puantajların imzalı olduğunu savunuyor. Zamanaşımı itirazı da eklensin.">${esc(k.talimat || '')}</textarea></label>
+          <label class="dikey">Gözden geçirilecek dilekçe (yalnız "Dilekçemi gözden geçir" için)<textarea name="mevcut" id="dl-mevcut" rows="6">${esc(k.mevcut || '')}</textarea></label>
+          <label class="dikey">Ayrıca gizlenecek adlar<textarea name="ekler" id="dl-ekler" rows="2" placeholder="Her satıra bir ad: tanık, şirket, yer…">${esc((k.ekler || []).join('\n'))}</textarea></label>
+          <button class="dugme">Gönderilecek metni hazırla</button>
+        </form>
+        <div>
+          ${h ? `<div class="blok"><div class="baslik kucuk-baslik"><h2>2. Claude'a gidecek metin</h2><span class="kucuk soluk">${h.sonuc.sayi} yer maskelendi</span></div>
+            <details ${k.cevap ? '' : 'open'}><summary class="kucuk">Maskeli metni göster</summary><div class="transkript anonim">${isaretle(h.sonuc.anonim)}</div></details>
+            ${supheliSuz(h.sonuc.supheliler, h.sonuc.anonim).length ? `<div class="kontrol erken ust-bosluk"><b>Gözden kaçmış olabilecekler:</b> ${supheliSuz(h.sonuc.supheliler, h.sonuc.anonim).map((x) => esc(x.deger)).join(', ')}. Bir kişiye aitse "Ayrıca gizlenecek adlar"a ekleyip yeniden hazırlayın.</div>` : '<div class="kontrol uyumlu ust-bosluk">Metinde kalmış bir ad ya da numara bulunamadı.</div>'}
+            ${k.cevap ? '' : `<label class="secim ust-bosluk"><input type="checkbox" data-eylem="dl-onay" id="dl-onay" ${k.onay ? 'checked' : ''}> Metni okudum, kişisel veri kalmadı</label>
+            <div class="yan ust-bosluk"><button class="dugme" data-eylem="dl-gonder" ${k.onay && !k.bekliyor ? '' : 'disabled'}>${k.bekliyor ? 'Claude yazıyor… (1–3 dakika)' : 'Claude\'a gönder'}</button></div>`}
+            ${k.hata ? `<div class="kontrol gec ust-bosluk">${esc(k.hata)}</div>` : ''}
+          </div>` : bos('Formu doldurup "Gönderilecek metni hazırla"ya basın. Claude\'a gidecek maskeli metni burada görüp onaylarsınız.')}
+          ${k.cevap != null ? `<div class="blok"><div class="baslik kucuk-baslik"><h2>3. Dilekçe</h2>${k.demoCikti ? '<span class="rozet r-gri">Demo örneği</span>' : ''}</div>
+            ${k.atiflar?.length ? `<div class="kontrol gec alt-bosluk"><b>Doğrulanmamış ${k.atiflar.length} karar atfı var.</b> Kullanmadan önce her birini resmî kaynaktan kontrol edin; yapay zekâ karar uydurabilir.<ul>${k.atiflar.map((x) => `<li class="kucuk">${esc(x)}</li>`).join('')}</ul></div>` : ''}
+            ${k.kalanEtiket?.length ? `<div class="kontrol erken alt-bosluk">Çevrilemeyen etiketler: ${k.kalanEtiket.map(esc).join(', ')}. Bunları elle doldurun.</div>` : ''}
+            <label class="dikey">Düzenleyebilirsiniz<textarea id="dl-cikti" data-eylem="dl-duzenle" rows="22">${esc(k.cevap)}</textarea></label>
+            <div class="yan ust-bosluk"><button class="dugme" data-eylem="dl-kopyala">Kopyala</button>${indirmeVar ? '<button class="ikincil" data-eylem="dl-word">Word olarak indir</button>' : ''}${did ? '<button class="ikincil" data-eylem="dl-kaydet">Dosyaya taslak olarak kaydet</button>' : ''}<button class="ikincil" data-eylem="dl-yeni">Yeni dilekçe</button></div>
+            <p class="kucuk soluk">Bu bir taslaktır. Olguları, talepleri, kanun maddelerini ve atıfları kontrol etmeden kullanmayın.</p></div>` : ''}
+          ${kayitli.length ? `<div class="blok"><h2>Bu dosyanın taslakları</h2><ul class="liste">${kayitli.slice().reverse().map((x) => `<li><div class="tarih">${UA.trTarih(x.tarih)}<div class="kucuk soluk">${UA.trSaat(x.tarih)}</div></div><div class="ana">${esc(x.tur)}<div class="kucuk soluk">${esc(String(x.metin).slice(0, 90))}…</div></div><button class="link" data-eylem="dl-ac" data-id="${esc(x.id)}">Aç</button></li>`).join('')}</ul></div>` : ''}
+        </div>
+      </div>`;
+  }
+  function dilekceDemoCikti(h, v) {
+    return `[Mahkeme başlığı — dosyadaki mahkeme]\nDOSYA NO: [DOSYA NO-1]\n\nDAVALI: [Müvekkil]\nVEKİLİ: Av. [Avukat]\nDAVACI: [Karşı taraf A]\n\nKONU: ${v.mod === 'revize' ? 'Dilekçenin gözden geçirilmiş hâli.' : v.tur + '.'}\n\nAÇIKLAMALAR:\n1. [Karşı taraf A] tarafından açılan davada ileri sürülen iddialar kabul edilmemektedir.\n2. ${v.talimat ? String(v.talimat).slice(0, 300) : '[Avukatın notlarına göre doldurulacak olgular]'}\n3. Yargıtay 9. Hukuk Dairesi'nin 2019/1234 E., 2020/5678 K. sayılı kararı da bu yöndedir. [DOĞRULANMALI]\n\nHUKUKİ NEDENLER: 4857 sayılı İş Kanunu, HMK ve ilgili mevzuat.\nDELİLLER: Puantaj kayıtları, bordrolar, tanık beyanları, bilirkişi incelemesi ve her türlü yasal delil.\n\nSONUÇ VE İSTEM: Yukarıda açıklanan nedenlerle davanın reddine, yargılama giderleri ile vekâlet ücretinin karşı tarafa yükletilmesine karar verilmesini saygıyla arz ve talep ederiz.\n\n[Tarih]\nDavalı [Müvekkil] Vekili\nAv. [Avukat]`;
+  }
+  function dilekceSonucIsle(k, ham) {
+    k.cevapHam = ham;
+    k.cevap = UA.geriCevir(ham, k.hazirlik.sonuc);
+    k.kalanEtiket = [...new Set((k.cevap.match(/\[(?:Müvekkil|Avukat|Karşı taraf [A-Z]\d*|Kişi \d+|Vekil \d+|[A-ZÇĞİÖŞÜ-]+-\d+)\]/g) || []))];
+    k.atiflar = atifBul(k.cevap);
+  }
+
   // ---------- metni anonimleştir ----------
   // Avukat dilekçeyi, notu ya da evrakı yapay zekâya vermeden önce burada maskeler. Her şey bu bilgisayarda olur;
   // metin ve eşleme kaydedilmez, sayfa kapanınca silinir.
@@ -679,7 +803,7 @@
         <div>${r ? `
           <div class="blok"><div class="baslik kucuk-baslik"><h2>2. Maskeli metin</h2><span class="kucuk soluk">${r.sayi} yer maskelendi</span></div>
             <div class="transkript anonim">${isaretle(r.anonim)}</div>
-            ${r.supheliler.length ? `<div class="kontrol erken ust-bosluk"><b>Gözden kaçmış olabilecekler:</b> ${r.supheliler.map((x) => `${esc(x.deger)} (${esc(String(x.tur).toLocaleLowerCase('tr-TR'))})`).join(', ')}. Bunlar bir kişiye aitse "Ayrıca gizlenecek adlar"a ekleyip yeniden anonimleştirin.</div>` : '<div class="kontrol uyumlu ust-bosluk">Metinde kalmış bir ad ya da numara bulunamadı. Yine de göndermeden önce okuyun.</div>'}
+            ${supheliSuz(r.supheliler, r.anonim).length ? `<div class="kontrol erken ust-bosluk"><b>Gözden kaçmış olabilecekler:</b> ${supheliSuz(r.supheliler, r.anonim).map((x) => `${esc(x.deger)} (${esc(String(x.tur).toLocaleLowerCase('tr-TR'))})`).join(', ')}. Bunlar bir kişiye aitse "Ayrıca gizlenecek adlar"a ekleyip yeniden anonimleştirin.</div>` : '<div class="kontrol uyumlu ust-bosluk">Metinde kalmış bir ad ya da numara bulunamadı. Yine de göndermeden önce okuyun.</div>'}
             <div class="yan ust-bosluk"><button class="dugme" data-eylem="anon-kopyala">Maskeli metni kopyala</button></div>
             ${etiketler.length ? `<details class="ust-bosluk"><summary class="kucuk">Etiketlerin karşılığı (yalnız bu bilgisayarda)</summary><div class="tablo"><table><tbody>${etiketler.map(([k, v]) => `<tr><td><mark>${esc(k)}</mark></td><td>${esc(v)}</td></tr>`).join('')}</tbody></table></div></details>` : ''}
           </div>
@@ -782,7 +906,7 @@
   }
 
   // ---------- çizim ----------
-  const SAYFALAR = { ozet, sorgu: sorguSayfa, durusma: durusmaSayfa, evrak: evrakSayfa, muvekkil: muvekkilSayfa, dosya: dosyaSayfa, para: paraSayfa, gorusme: gorusmeSayfa, anonim: anonimSayfa, hatirlatma: hatirlatmaSayfa };
+  const SAYFALAR = { ozet, sorgu: sorguSayfa, durusma: durusmaSayfa, evrak: evrakSayfa, muvekkil: muvekkilSayfa, dosya: dosyaSayfa, para: paraSayfa, gorusme: gorusmeSayfa, dilekce: dilekceSayfa, anonim: anonimSayfa, hatirlatma: hatirlatmaSayfa };
   function ciz() {
     nesil++;
     document.body.dataset.ekran = D.gorunum;
@@ -867,6 +991,35 @@
       case 'anon-kopyala': return D.anon?.sonuc ? kopyala(D.anon.sonuc.anonim, 'Maskeli metin kopyalandı.') : undefined;
       case 'anon-geri-kopyala': return D.anon?.geri != null ? kopyala(D.anon.geri, 'Metin kopyalandı.') : undefined;
       case 'anon-temizle': D.anon = null; return ciz();
+      case 'yz-yenile': D.yzDurum = await yzDurum(true); return ciz();
+      case 'dl-gonder': {
+        const k = D.dilekce; if (!k?.hazirlik || !k.onay || k.bekliyor) return;
+        k.bekliyor = true; k.hata = null; ciz();
+        const yz = D.yzDurum = await yzDurum(true);
+        try {
+          let ham;
+          if (!yz.hazir && D.mod === 'demo') { await new Promise((r) => setTimeout(r, 1200)); ham = dilekceDemoCikti(k.hazirlik, k); k.demoCikti = true; }
+          else ham = await yzUret(k.mod === 'revize' ? REVIZE_SISTEM : DILEKCE_SISTEM, k.hazirlik.sonuc.anonim, 'high');
+          dilekceSonucIsle(k, ham);
+          if (k.did) iz(k.did, `Yapay zekâyla dilekçe ${k.mod === 'revize' ? 'gözden geçirildi' : 'taslağı yazıldı'}: ${k.tur} (yalnız maskeli metin gönderildi)`), kaydet();
+        } catch (e) { k.hata = e.message; }
+        k.bekliyor = false; return ciz();
+      }
+      case 'dl-kopyala': { const t = $('#dl-cikti')?.value ?? D.dilekce?.cevap; return kopyala(t || '', 'Dilekçe kopyalandı.'); }
+      case 'dl-word': {
+        const t = $('#dl-cikti')?.value ?? D.dilekce?.cevap ?? '';
+        const html = `<html><head><meta charset="utf-8"><title>Dilekçe</title></head><body style="font-family:'Times New Roman';font-size:12pt;line-height:1.5">${t.split('\n').map((x) => `<p style="margin:0 0 6pt">${esc(x) || '&nbsp;'}</p>`).join('')}</body></html>`;
+        indir(`dilekce-${UA.iso(new Date())}.doc`, html, 'application/msword'); return bildir('Word dosyası indirildi.');
+      }
+      case 'dl-kaydet': {
+        const k = D.dilekce; if (!k?.did) return;
+        const t = $('#dl-cikti')?.value ?? k.cevap;
+        const l = ((D.elle.dilekceler = D.elle.dilekceler || {})[k.did] = D.elle.dilekceler[k.did] || []);
+        l.push({ id: 'dl-' + Date.now(), tarih: new Date().toISOString(), tur: k.tur, mod: k.mod, metin: t });
+        iz(k.did, `Dilekçe taslağı kaydedildi: ${k.tur}`); bildir('Taslak dosyaya kaydedildi.'); return kaydet();
+      }
+      case 'dl-ac': { const k = D.dilekce; const x = ((D.elle.dilekceler || {})[k?.did] || []).find((y) => y.id === id); if (x) { k.cevap = x.metin; k.atiflar = atifBul(x.metin); k.kalanEtiket = []; k.demoCikti = false; } return ciz(); }
+      case 'dl-yeni': D.dilekce = { mod: 'yeni', tur: DILEKCE_TURLERI[0] }; return ciz();
       case 'ses-ac': return dosyaAc(t.dataset.b, 'gorusme.webm');
       case 'kayit-dur': return kayitDurdur();
       case 'ses-sil': { const g = D.elle.gorusmeler.find((x) => x.id === id); if (!g?.ses) return; await dosyaDepo.sil(g.ses.id).catch(() => {}); g.ses = null; iz(g.dosyaId, 'Görüşme ses kaydı silindi'); bildir('Ses kaydı bu bilgisayardan silindi.'); return kaydet(); }
@@ -908,6 +1061,8 @@
     if (t.dataset.eylem === 'paylas') { dosyaElle(id).paylas = t.checked; iz(id, t.checked ? 'Dosya müvekkil portalında paylaşıldı' : 'Dosya portaldan kaldırıldı'); bildir(t.checked ? 'Dosya müvekkil portalında paylaşıldı.' : 'Dosya portaldan kaldırıldı.'); return kaydet(); }
     if (t.dataset.eylem === 'portal-muv') { D.portalMuv = t.value; return ciz(); }
     if (t.dataset.eylem === 'anonim-onay') { D.anonimOnay = t.checked; return ciz(); }
+    if (t.dataset.eylem === 'dl-onay') { if (D.dilekce) D.dilekce.onay = t.checked; return ciz(); }
+    if (t.dataset.eylem === 'dl-duzenle') { if (D.dilekce) { D.dilekce.cevap = t.value; D.dilekce.atiflar = atifBul(t.value); } return; }
     if (t.dataset.eylem === 'is-bitti') { const i = (D.elle.isler || []).find((x) => x.id === id); if (i) i.bitti = true; return kaydet(); }
     if (t.dataset.eylem === 'yedek-yukle' && t.files[0]) {
       t.files[0].text().then(async (metin) => {
@@ -948,6 +1103,16 @@
         bildir('Hareket eklendi.'); return kaydet();
       }
       case 'vekalet': dosyaElle(id).vekaletUcreti = v.ucret === '' ? null : +v.ucret; iz(id, `Vekâlet ücreti: ${v.ucret === '' ? 'silindi' : UA.tl(+v.ucret)}`); bildir('Vekâlet ücreti kaydedildi.'); return kaydet();
+      case 'dilekce': {
+        const ekler = String(v.ekler || '').split(/\n+/).map((x) => x.trim()).filter(Boolean);
+        const did = Object.keys(D.db.dosyalar).find((x) => dosyaAdi(x) === String(v.dosya || '').trim());
+        if (!did) return bildir('Dosya bulunamadı. Listeden bir dosya seçin.');
+        if (v.mod === 'revize' && !String(v.mevcut || '').trim()) return bildir('Gözden geçirilecek dilekçeyi yapıştırın.');
+        const k = { mod: v.mod, dosya: v.dosya, did, tur: v.tur, talimat: v.talimat, mevcut: v.mevcut, ekler };
+        const ist = dilekceIstegi(did, k);
+        try { k.hazirlik = { sonuc: UA.anonimlestir(ist.metin, ist.liste) }; } catch (e) { return bildir('Metin maskelenemedi: ' + e.message); }
+        D.dilekce = k; return ciz();
+      }
       case 'anon': {
         const ekler = String(v.ekler || '').split(/\n+/).map((x) => x.trim()).filter(Boolean);
         const did = v.dosya && Object.keys(D.db.dosyalar).find((x) => dosyaAdi(x) === v.dosya.trim());
