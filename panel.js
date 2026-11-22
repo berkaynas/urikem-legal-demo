@@ -302,8 +302,8 @@ Köşeli parantezli etiketler gizlenmiş adlardır; aynen kullan. Emin olmadığ
     const karmasik = /\b(ama|fakat|henüz|hiç|olmayan|olmamış|etmediğim|etmediğimiz|yapmadığım|gelmeyen|en çok|en fazla|en az|kaç|hangi|neden|değil)\b/i.test(D.sorgu);
     const zayif = sartsiz && ((kural.konu === 'dosya' && kelime >= 2) || kelime >= 4 || karmasik);
     const yzS = D.sorguYz && D.sorguYz.soru === D.sorgu ? D.sorguYz : null;
+    yzDurumTazele();
     const yzBagli = D.yzDurum?.hazir && D.yzDurum?.giris;
-    if (!D.yzDurum && !D.yzSoruldu) { D.yzSoruldu = true; yzDurum().then((x) => { D.yzDurum = x; sonraCiz(); }); }
     if (zayif && yzBagli && !yzS) { const soru = D.sorgu; D.sorguYz = { soru, bekliyor: true }; setTimeout(() => yzSorguYorumla(soru), 0); }
     const r = yzS?.filtre || kural;
     const KONU = { durusma: 'duruşmalar', tebligat: 'tebligatlar', evrak: 'evrak', sure: 'son günler', para: 'masraf ve avans', muvekkil: 'müvekkiller', dosya: 'dosyalar', ajanda: 'o günlerin işleri' };
@@ -384,6 +384,7 @@ Köşeli parantezli etiketler gizlenmiş adlardır; aynen kullan. Emin olmadığ
     }
     return `<div class="baslik"><div><h1>Sorgu</h1><div class="soluk">“${esc(D.sorgu)}”</div></div></div>
       ${sorguKutusu(false)}
+      ${D.mod !== 'demo' && zayif && !yzBagli ? `<div class="kontrol erken alt-bosluk">Bu soruyu kurallarla anlayamadım. Claude ile yorumlamak için yapay zekâ köprüsünü açın (<code>urikem-yz/yz-baslat.command</code>).${D.yzDurum?.hata ? ` <span class="kucuk soluk">Hata: ${esc(D.yzDurum.hata)}</span>` : ''}</div>` : ''}
       ${yzS?.bekliyor ? '<div class="kontrol erken alt-bosluk">Bu soruyu kurallarla anlayamadım; Claude yorumluyor… (birkaç saniye)</div>' : ''}
       ${yzS?.onayGerek ? `<div class="kontrol erken alt-bosluk">Soruda maskelenemeyen bir ad olabilir: <b>${yzS.supheli.map((x) => esc(x.deger)).join(', ')}</b>. Claude'a şu hâliyle gidecek: “${esc(yzS.maskeli)}”. <button class="dugme" data-eylem="sorgu-yz-gonder">Yine de Claude'a sor</button></div>` : ''}
       ${yzS?.hata ? `<div class="kontrol gec alt-bosluk">Claude soruyu yorumlayamadı: ${esc(yzS.hata)} Kurallarla anlaşılan sonuç gösteriliyor.</div>` : ''}
@@ -773,10 +774,18 @@ Köşeli parantezli etiketler gizlenmiş adlardır; aynen kullan. Emin olmadığ
   async function yzDurum(tazele) {
     if (!tazele && yzDurumBellek && Date.now() - yzDurumBellek.zaman < 30000) return yzDurumBellek.deger;
     let deger;
-    try { const r = await fetch(YZ_ADRES + '/durum', { signal: AbortSignal.timeout(4000) }); deger = r.ok ? await r.json() : { hazir: false }; }
-    catch (_) { deger = { hazir: false }; }
+    try { const r = await fetch(YZ_ADRES + '/durum', { signal: AbortSignal.timeout(8000) }); deger = r.ok ? await r.json() : { hazir: false, hata: `Köprü ${r.status} döndü` }; }
+    catch (e) { deger = { hazir: false, hata: e && e.name === 'TimeoutError' ? 'köprü 8 saniyede cevap vermedi' : String(e && e.message || e) }; }
     yzDurumBellek = { zaman: Date.now(), deger };
     return deger;
+  }
+  // Panel açıkken köprü sonradan açılabilir: bağlı değilse en geç 10 saniyede bir yeniden sor
+  let yzSonSoru = 0;
+  function yzDurumTazele() {
+    const bagli = D.yzDurum?.hazir && D.yzDurum?.giris;
+    if (bagli || Date.now() - yzSonSoru < 10000) return;
+    yzSonSoru = Date.now();
+    yzDurum(true).then((x) => { const degisti = JSON.stringify(x) !== JSON.stringify(D.yzDurum); D.yzDurum = x; if (degisti) sonraCiz(); });
   }
   async function yzUret(sistem, metin, efor = 'high') {
     const r = await fetch(YZ_ADRES + '/uret', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sistem, metin, efor }), signal: AbortSignal.timeout(6 * 60 * 1000) });
@@ -830,15 +839,15 @@ Kurallar:
 
   function dilekceSayfa() {
     const k = (D.dilekce = D.dilekce || { mod: 'yeni', tur: DILEKCE_TURLERI[0] });
+    yzDurumTazele();
     const yz = D.yzDurum;
-    if (!yz && !D.yzSoruldu) { D.yzSoruldu = true; yzDurum().then((x) => { D.yzDurum = x; sonraCiz(); }); }
     const did = k.dosya && Object.keys(D.db.dosyalar).find((x) => dosyaAdi(x) === k.dosya);
     const kayitli = did ? ((D.elle.dilekceler || {})[did] || []) : [];
     const dosyaSecenek = Object.keys(D.db.dosyalar).sort((x, y) => (acikMi(y) - acikMi(x)) || dosyaAdi(x).localeCompare(dosyaAdi(y), 'tr')).map((x) => `<option value="${esc(dosyaAdi(x))}">`).join('');
     const yzSatir = yz?.hazir && yz.giris ? `<div class="kontrol uyumlu alt-bosluk"><b>Yapay zekâ bağlı:</b> ${esc(yz.kaynak || 'Claude')}. Claude'a yalnız maskelenmiş metin gider.</div>`
       : yz?.hazir ? '<div class="kontrol erken alt-bosluk"><b>Claude Code oturumu kapalı.</b> Terminalde <code>claude auth login</code> ile giriş yapın, sonra bu sayfayı yenileyin.</div>'
       : D.mod === 'demo' ? '<div class="kontrol erken alt-bosluk"><b>Demo:</b> burada gerçek yapay zekâ çağrılmaz; akışı göstermek için örnek bir dilekçe üretilir.</div>'
-      : '<div class="kontrol gec alt-bosluk"><b>Yapay zekâ köprüsü kapalı.</b> <code>urikem-yz/yz-baslat.command</code> dosyasına çift tıklayıp açık bırakın, sonra <button class="link" data-eylem="yz-yenile">yeniden deneyin</button>.</div>';
+      : `<div class="kontrol gec alt-bosluk"><b>Yapay zekâ köprüsüne bağlanılamadı.</b> <code>urikem-yz/yz-baslat.command</code> dosyasına çift tıklayıp pencereyi açık bırakın; panel birkaç saniye içinde kendisi bağlanır ya da <button class="link" data-eylem="yz-yenile">şimdi yeniden deneyin</button>.${yz?.hata ? `<div class="kucuk soluk ust-bosluk">Hata: ${esc(yz.hata)}</div>` : ''}</div>`;
     const h = k.hazirlik;
     return `<div class="baslik"><div><h1>Dilekçe</h1><div class="soluk">Dosyanın UYAP bilgileriyle dilekçe taslağı yazdırın ya da kendi dilekçenizi gözden geçirtin. Müvekkil bilgileri gönderilmeden önce bu bilgisayarda maskelenir; siz onaylamadan hiçbir şey gönderilmez.</div></div></div>
       ${yzSatir}
