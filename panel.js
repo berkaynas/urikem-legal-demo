@@ -716,14 +716,15 @@ Köşeli parantezli etiketler gizlenmiş adlardır; aynen kullan. Emin olmadığ
   const anonimListe = (g) => kisiListesi(g.dosyaId, muvekkilBul(g.muvekkilId)?.ad);
   const anonimHazirla = (g) => UA.anonimlestir((g.transkript || []).map(([k, x]) => `${k}: ${x}`).join('\n'), anonimListe(g));
   // "Gözden kaçmış olabilir" uyarısından, yalnız hukuk/UYAP terimlerinden oluşan ifadeleri çıkar (Dava Dosyası, Tebliğ Mazbatası…).
-  const HUKUK_TERIM = new Set('dosya dosyası dosyasi bilgileri bilgisi dava davası davasi dilekçe dilekçesi tebliğ tebliği tebligat mazbata mazbatası tutanak tutanağı tutanagi inceleme ön karar kararı ara rapor raporu bilirkişi bilirkişinin duruşma duruşması duruşmasi tahkikat hukuk asliye ticaret iş icra ceza idare vergi sulh mahkeme mahkemesi dairesi daire genel kurul yargıtay danıştay bölge adliye istinaf temyiz cevap replik düplik beyan itiraz istem talep sonuç açıklamalar deliller tanık listesi liste ihtarname vekalet vekâlet vekaletname harç gider avans masraf makbuz tahsilat reddiyat müzekkere yazı cevabı tensip zaptı zabıt keşif ihale satış haciz ödeme emri takip talebi kesin süre uyap e-tebliğ kapalı açık'.split(' '));
+  const HUKUK_TERIM = new Set('dosya dosyası dosyasi bilgileri bilgisi dava davası davasi dilekçe dilekçesi tebliğ tebliği tebligat mazbata mazbatası tutanak tutanağı tutanagi inceleme ön karar kararı ara rapor raporu bilirkişi bilirkişinin duruşma duruşması duruşmasi tahkikat hukuk asliye ticaret iş icra ceza idare vergi sulh mahkeme mahkemesi dairesi daire genel kurul yargıtay danıştay bölge adliye istinaf temyiz cevap replik düplik beyan itiraz istem talep sonuç açıklamalar deliller tanık listesi liste ihtarname vekalet vekâlet vekaletname harç gider avans masraf makbuz tahsilat reddiyat müzekkere yazı cevabı tensip zaptı zabıt keşif ihale satış haciz ödeme emri takip talebi kesin süre uyap e-tebliğ kapalı açık taşınmaz tasinmaz şerh serh ekleme eklenmesi kaldırma evrakı evraki evrak nüfus nufus kayıt kayit örneği ornegi örnegi taşıt tasit mahrumiyet bankadan banka gelen giden dönüş donus yazısı yazisi sorgu sorgusu sonucu kurum talep talebi tensip muhtıra muhtira icra icrası bilgi bilgileri adres araştırma arastirma tapu sgk emniyet trafik maaş maas menkul gayrimenkul kıymet kiymet takdir rapor raporu tutanak tutanağı tutanagi tebliğ tebligi mazbatası mazbatasi'.split(' '));
   // Kartı'nın kuralı cümle başındaki büyük harfli ikilileri atlar ("…yapıldı. Ayşe Demir de…"); onları da uyarıya ekle.
-  const CUMLE_BASI_GENEL = new Set('bu şu o bir her hiç ancak ayrıca ayrica fakat ama ve veya ile ki çünkü cunku zira dolayısıyla dolayisiyla buna göre gore sayın sayin yukarıda yukarida aşağıda asagida müvekkil müvekkilimiz davacı davalı davali davaci karşı taraf vekil vekili sonuç sonuc saygılarımızla tarih imza ek ekler not sonra önce once daha bey hanım hanim efendi'.split(' '));
+  const CUMLE_BASI_GENEL = new Set('bu şu o bir her hiç ancak ayrıca ayrica fakat ama ve veya ile ki çünkü cunku zira dolayısıyla dolayisiyla buna göre gore sayın sayin yukarıda yukarida aşağıda asagida müvekkil müvekkilimiz davacı davalı davali davaci karşı taraf vekil vekili sonuç sonuc saygılarımızla tarih imza ek ekler not sonra önce once daha bey hanım hanim efendi konu tanık tanik şahit sahit bilirkişi bilirkisi mahkeme hakim hâkim savcı savci borçlu borclu alacaklı alacakli muris mirasçı mirasci vekil vekili sayın'.split(' '));
   const cumleBasiAdlar = (t) => [...String(t || '').replace(/\[[^\]\n]{1,40}\]/g, (x) => ' '.repeat(x.length)).matchAll(/(?:^|[.!?:]\s+|\n\s*)([A-ZÇĞİÖŞÜ][a-zçğıöşü]{2,}[ \t]+[A-ZÇĞİÖŞÜ][a-zçğıöşü]{2,})(?=[\s,.;:!?)]|$)/g)]
     .map((m) => m[1]).filter((x) => !x.toLocaleLowerCase('tr-TR').split(/\s+/).some((w) => CUMLE_BASI_GENEL.has(w)))
     .map((deger) => ({ tur: 'Cümle başında ad olabilir', deger }));
-  const supheliSuz = (l, metin) => {
-    const hepsi = [...(l || []), ...cumleBasiAdlar(metin)], gor = new Set();
+  const supheliSuz = (l, metin, beyaz) => {
+    const bilinen = (beyaz || []).map(UA.normal).filter(Boolean);
+    const hepsi = [...(l || []), ...cumleBasiAdlar(metin)].filter((x) => { const k = UA.normal(x.deger); return !bilinen.some((b) => b.includes(k)); }), gor = new Set();
     return hepsi.filter((x) => { const k = UA.normal(x.deger); if (gor.has(k)) return false; gor.add(k); return true; })
       .filter((x) => !String(x.deger).toLocaleLowerCase('tr-TR').split(/[\s.,;:/-]+/).filter(Boolean).every((w) => HUKUK_TERIM.has(w)));
   };
@@ -826,7 +827,8 @@ Kurallar:
     const satir = ['DOSYA BİLGİLERİ (UYAP)', `Mahkeme: ${d.birimAdi || '—'}`, `Dosya: ${d.dosyaNo || '—'}`, `Dosya türü: ${d.dosyaTur || '—'} · Durum: ${d.dosyaDurum || '—'}`];
     if (d.davaTurleri) satir.push(`Dava türü: ${d.davaTurleri}`);
     if (taraf.length) { satir.push('Taraflar:'); for (const t of taraf) satir.push(`- ${t.rol || 'Taraf'}: ${t.adi}${/kurum|tüzel|tuzel|şirket/i.test(t.kisiKurum || '') ? ' (tüzel kişi)' : /kişi|kisi|gerçek/i.test(t.kisiKurum || '') ? ' (gerçek kişi)' : ''}${UA.normal(t.adi) === UA.normal(e.muvekkil) ? ' (müvekkilimiz)' : ''}${t.vekil ? ` — vekili: ${t.vekil}` : ''}`); }
-    if (ev.length) { satir.push('Dosyadaki son evrak:'); for (const x of ev) satir.push(`- ${UA.trTarih(x.onayTarihi)} ${x.tur}${x.aciklama && x.aciklama !== x.tur ? ' — ' + x.aciklama : ''}`); }
+    const numarasiz = (t) => String(t || '').replace(/\b\d{10,}\b/g, '').replace(/\s{2,}/g, ' ').trim();
+    if (ev.length) { satir.push('Dosyadaki son evrak:'); for (const x of ev) { const ac = numarasiz(x.aciklama); satir.push(`- ${UA.trTarih(x.onayTarihi)} ${x.tur}${ac && ac !== x.tur ? ' — ' + ac : ''}`); } }
     if (dr.length) satir.push('Yaklaşan duruşma: ' + dr.map((x) => `${UA.trTarih(x.tarihSaat)} ${x.islem || ''}`).join('; '));
     satir.push('', v.mod === 'revize' ? 'İSTEK: Aşağıdaki dilekçeyi gözden geçir ve düzelt.' : `İSTEK: ${v.tur} yaz.`);
     if (v.talimat) satir.push('Avukatın notları:', v.talimat);
@@ -834,7 +836,8 @@ Kurallar:
     // Karşı taraf vekilleri de maskelensin
     const vekiller = [...new Set(taraf.map((t) => t.vekil).filter(Boolean).flatMap((x) => String(x).split(/,|;| ve /)).map((x) => x.replace(/^\s*av\.?\s*/i, '').trim()).filter((x) => x.length > 4 && !/\*{2,}/.test(x) && UA.normal(x) !== UA.normal(D.elle.ayarlar?.avukatAdi || '')))];
     const ekler = [...(v.ekler || []), ...vekiller.map((x, i) => `[Vekil ${i + 1}] = ${x}`)];
-    return { metin: satir.join('\n'), liste: kisiListesi(did, e.muvekkil, ekler) };
+    const beyaz = [d.birimAdi, String(d.birimAdi || '').replace(/ (Mahkemesi|Dairesi)$/i, ''), d.dosyaTur, d.davaTurleri, ...ev.map((x) => x.tur), ...ev.map((x) => x.tip)].filter(Boolean);
+    return { metin: satir.join('\n'), liste: kisiListesi(did, e.muvekkil, ekler), beyaz };
   }
   // Karar künyesi geçen satırları bul (… 2019/1234 E., 2020/5678 K. …); satırın tamamını göster, uzunsa kısalt.
   const atifBul = (t) => [...new Set(String(t).split('\n').filter((x) => /\b\d{4}\s*\/\s*\d+\s*E\.?[^\n]*?\d{4}\s*\/\s*\d+\s*K\.?/.test(x)).map((x) => { x = x.trim(); return x.length > 220 ? x.slice(0, 217) + '…' : x; }))];
@@ -866,7 +869,7 @@ Kurallar:
         <div>
           ${h ? `<div class="blok"><div class="baslik kucuk-baslik"><h2>2. Claude'a gidecek metin</h2><span class="kucuk soluk">${h.sonuc.sayi} yer maskelendi</span></div>
             <details ${k.cevap ? '' : 'open'}><summary class="kucuk">Maskeli metni göster</summary><div class="transkript anonim">${isaretle(h.sonuc.anonim)}</div></details>
-            ${supheliSuz(h.sonuc.supheliler, h.sonuc.anonim).length ? `<div class="kontrol erken ust-bosluk"><b>Gözden kaçmış olabilecekler:</b> ${supheliSuz(h.sonuc.supheliler, h.sonuc.anonim).map((x) => esc(x.deger)).join(', ')}. Bir kişiye aitse "Ayrıca gizlenecek adlar"a ekleyip yeniden hazırlayın.</div>` : '<div class="kontrol uyumlu ust-bosluk">Metinde kalmış bir ad ya da numara bulunamadı.</div>'}
+            ${supheliSuz(h.sonuc.supheliler, h.sonuc.anonim, h.beyaz).length ? `<div class="kontrol erken ust-bosluk"><b>Gözden kaçmış olabilecekler:</b> ${supheliSuz(h.sonuc.supheliler, h.sonuc.anonim, h.beyaz).map((x) => esc(x.deger)).join(', ')}. Bir kişiye aitse "Ayrıca gizlenecek adlar"a ekleyip yeniden hazırlayın.</div>` : '<div class="kontrol uyumlu ust-bosluk">Metinde kalmış bir ad ya da numara bulunamadı.</div>'}
             ${k.cevap ? '' : `<label class="secim ust-bosluk"><input type="checkbox" data-eylem="dl-onay" id="dl-onay" ${k.onay ? 'checked' : ''}> Metni okudum, kişisel veri kalmadı</label>
             <div class="yan ust-bosluk"><button class="dugme" data-eylem="dl-gonder" ${k.onay && !k.bekliyor ? '' : 'disabled'}>${k.bekliyor ? 'Claude yazıyor… (1–3 dakika)' : 'Claude\'a gönder'}</button></div>`}
             ${k.hata ? `<div class="kontrol gec ust-bosluk">${esc(k.hata)}</div>` : ''}
@@ -1185,7 +1188,7 @@ Kurallar:
         if (v.mod === 'revize' && !String(v.mevcut || '').trim()) return bildir('Gözden geçirilecek dilekçeyi yapıştırın.');
         const k = { mod: v.mod, dosya: v.dosya, did, tur: v.tur, talimat: v.talimat, mevcut: v.mevcut, ekler };
         const ist = dilekceIstegi(did, k);
-        try { k.hazirlik = { sonuc: UA.anonimlestir(ist.metin, ist.liste) }; } catch (e) { return bildir('Metin maskelenemedi: ' + e.message); }
+        try { k.hazirlik = { sonuc: UA.anonimlestir(ist.metin, ist.liste), beyaz: ist.beyaz }; } catch (e) { return bildir('Metin maskelenemedi: ' + e.message); }
         D.dilekce = k; return ciz();
       }
       case 'devralma': dosyaElle(id).devralma = v.tarih || null; iz(id, v.tarih ? `Dosyayı alma tarihi: ${UA.trTarih(UA.tarihCoz(v.tarih))}` : 'Dosyayı alma tarihi silindi (ilk ödeme kullanılacak)'); bildir('Kaydedildi.'); return kaydet();
