@@ -253,11 +253,13 @@ Süzgeç alanları (gerekmeyeni null ya da boş bırak):
  "evrakYok": dosyada bulunmaması gereken evrak türü kelimeleri, ör. ["itiraz"],
  "durusma": "var" (yaklaşan duruşması olan dosyalar) | "yok" (yaklaşan duruşması olmayan) | null,
  "durum": {"avansEksi": bool, "okunmamis": bool, "belgesiz": bool, "suresiz": bool, "uyumsuz": bool, "kapali": bool},
+ "esikler": tutar ya da sayı şartları, ör. [{"alan": "masraf", "op": ">", "deger": 5000}]; alan: "masraf" (toplam masraf, TL) | "avans" (kullanılabilir avans, TL) | "tahsil" (müvekkilden tahsil edilecek, TL) | "bakiye" (dosya bakiyesi, TL; yalnız konu para) | "dosya" (dosya sayısı; yalnız konu muvekkil); op: ">" | ">=" | "<" | "<=",
  "sirala": "masraf" | "bakiye" | "tarih" | null, "limit": sayı | null,
  "anlasilan": "sorudan ne anladığının tek cümlelik Türkçe özeti"}
 Konu anlamları: durusma = duruşmalar; tebligat = gelen tebligatlar; evrak = gelen evrak; sure = avukatın girdiği son günler; para = dosya masraf/avans; muvekkil = müvekkil listesi ve hesapları; dosya = dosya listesi; ajanda = bir tarih aralığındaki bütün işler.
 Dosya türleri: ${ctx.turler.join(', ')}. Dosya durumları: ${ctx.durumlar.join(', ')}.
 "Yargıtay'da", "istinafta", "karara çıkmış", "derdest", "kapanmış" gibi ifadeler dosya DURUMUDUR, mahkeme adı değildir: dosyaDurumlari'na yaz. "Açık dosya" = dosyaDurumlari ["açık"]. Mahkeme adı ancak "ticaret mahkemesi", "Kadıköy", "3. İş" gibi bir mahkemeyi kastediyorsa birimler'e yazılır.
+Tutar ya da sayı şartı varsa ("5000 TL'den fazla", "10 binin altında", "3'ten çok dosyası olan") mutlaka esikler'e yaz; "fazla/üstünde" ">", "en az" ">=", "az/altında" "<", "en fazla" "<=". Müvekkil soruluyorsa konu muvekkil, dosya soruluyorsa konu para olur. "5 bin", "5.000", "5000 TL" hepsi 5000'dir.
 Köşeli parantezli etiketler gizlenmiş adlardır; aynen kullan. Emin olmadığın alanı boş bırak.`;
   function sorguMaskele(soru) {
     const adlar = muvekkiller().map((m) => m.ad).filter((a) => a && !/\*{2,}/.test(a));
@@ -273,7 +275,8 @@ Köşeli parantezli etiketler gizlenmiş adlardır; aynen kullan. Emin olmadığ
       tur: g(j.tur), muvekkiller: [], birimler: (j.birimler || []).map(UA.normal).filter(Boolean), dosyaNo: g(j.dosyaNo),
       durum: Object.fromEntries(Object.entries(j.durum || {}).filter(([, v]) => v === true)),
       dosyaDurumlari: [...(j.dosyaDurumlari || []), ...(j.dosyaDurumu ? [j.dosyaDurumu] : [])].map(UA.normal).filter(Boolean), birimVeya: true, evrakVar: (j.evrakVar || []).map(UA.normal).filter(Boolean), evrakYok: (j.evrakYok || []).map(UA.normal).filter(Boolean),
-      durusma: ['var', 'yok'].includes(j.durusma) ? j.durusma : null, sirala: g(j.sirala), limit: +j.limit || null, anlasilan: g(j.anlasilan), yz: true };
+      durusma: ['var', 'yok'].includes(j.durusma) ? j.durusma : null, sirala: g(j.sirala),
+      esikler: (Array.isArray(j.esikler) ? j.esikler : []).filter((x) => x && ['masraf', 'avans', 'tahsil', 'bakiye', 'dosya'].includes(x.alan) && ['>', '>=', '<', '<='].includes(x.op) && Number.isFinite(+x.deger)).map((x) => ({ alan: x.alan, op: x.op, deger: +x.deger })), limit: +j.limit || null, anlasilan: g(j.anlasilan), yz: true };
     const adlar = new Set(muvekkiller().map((m) => m.ad));
     r.muvekkiller = (j.muvekkiller || []).filter((x) => adlar.has(x));
     r.hedefMuvekkil = r.konu === 'muvekkil' || r.sirala === 'masraf' && r.konu === 'muvekkil';
@@ -297,14 +300,16 @@ Köşeli parantezli etiketler gizlenmiş adlardır; aynen kullan. Emin olmadığ
     const kural = UA.sorguCoz(D.sorgu, { muvekkilAdlari: muvekkiller().map((m) => m.ad) });
     // Kural yalnız konuyu yakalayıp başka hiçbir şart bulamadıysa ve soru kısa değilse (ya da "ama, henüz, olmayan, en çok" gibi
     // kuralların bilmediği bir yapı varsa) soruyu anlamamış sayılır ve Claude'a sorulur.
-    const sartsiz = !kural.zaman && !kural.tur && !kural.muvekkiller.length && !kural.birimler.length && !kural.dosyaNo && !Object.keys(kural.durum).length;
+    const sartsiz = !kural.zaman && !kural.tur && !kural.muvekkiller.length && !kural.birimler.length && !kural.dosyaNo && !Object.keys(kural.durum).length && !(kural.esikler || []).length;
     const kelime = String(D.sorgu).trim().split(/\s+/).length;
     const karmasik = /\b(ama|fakat|henüz|hiç|olmayan|olmamış|etmediğim|etmediğimiz|yapmadığım|gelmeyen|en çok|en fazla|en az|kaç|hangi|neden|değil)\b/i.test(D.sorgu);
     const zayif = sartsiz && ((kural.konu === 'dosya' && kelime >= 2) || kelime >= 4 || karmasik);
     const yzS = D.sorguYz && D.sorguYz.soru === D.sorgu ? D.sorguYz : null;
     yzDurumTazele();
     const yzBagli = D.yzDurum?.hazir && D.yzDurum?.giris;
-    if (zayif && yzBagli && !yzS) { const soru = D.sorgu; D.sorguYz = { soru, bekliyor: true }; setTimeout(() => yzSorguYorumla(soru), 0); }
+    // Yapay zekâ bağlıysa her soru Claude'a yorumlatılır (yalnız maskeli soru gider); kurallar yalnız bağlantı yoksa ya da Claude hata verirse kullanılır.
+    if (yzBagli && !yzS) { const soru = D.sorgu; D.sorguYz = { soru, bekliyor: true }; setTimeout(() => yzSorguYorumla(soru), 0); }
+    const yzBekle = !window.URIKEM_DEMO && (yzS?.bekliyor || yzS?.onayGerek || (D.yzDurum === undefined && !yzS));
     const r = yzS?.filtre || kural;
     const KONU = { durusma: 'duruşmalar', tebligat: 'tebligatlar', evrak: 'evrak', sure: 'son günler', para: 'masraf ve avans', muvekkil: 'müvekkiller', dosya: 'dosyalar', ajanda: 'o günlerin işleri' };
     const cipler = [`Konu: ${KONU[r.konu]}`];
@@ -319,6 +324,9 @@ Köşeli parantezli etiketler gizlenmiş adlardır; aynen kullan. Emin olmadığ
     if ((r.dosyaDurumlari || []).length) cipler.push(`Dosya durumu: ${r.dosyaDurumlari.join(' ya da ')}`);
     for (const x of r.evrakVar || []) cipler.push(`Evrak var: ${x}`);
     for (const x of r.evrakYok || []) cipler.push(`Evrak yok: ${x}`);
+    const ESIK_AD = { masraf: 'Toplam masraf', avans: 'Kullanılabilir avans', tahsil: 'Tahsil edilecek', bakiye: 'Bakiye', dosya: 'Dosya sayısı' };
+    for (const x of r.esikler || []) cipler.push(`${ESIK_AD[x.alan]} ${x.op} ${x.alan === 'dosya' ? x.deger : UA.tl(x.deger)}`);
+    const esikUyar = (deger) => (r.esikler || []).every((x) => { const v = deger[x.alan]; if (v == null) return true; return x.op === '>' ? v > x.deger : x.op === '>=' ? v >= x.deger : x.op === '<' ? v < x.deger : v <= x.deger; });
     if (r.sirala) cipler.push(`Sıra: ${{ masraf: 'en çok masraf', bakiye: 'bakiye', tarih: 'tarih' }[r.sirala] || r.sirala}${r.limit ? ', ilk ' + r.limit : ''}`);
 
     const dosyaUyar = (id) => {
@@ -362,16 +370,18 @@ Köşeli parantezli etiketler gizlenmiş adlardır; aynen kullan. Emin olmadığ
       govde = l.length ? `<div class="tablo"><table><thead><tr><th>Tarih</th><th>Dosya</th><th>Masraf</th><th class="sayi">Tutar</th></tr></thead><tbody>${l.map(({ id, h }) => `<tr class="tikla" data-eylem="dosya" data-id="${esc(id)}"><td>${UA.trTarih(UA.tarihCoz(h.tarih))}</td><td>${esc(dosyaAdi(id))}<div class="kucuk soluk">${esc(D.elle.dosyalar[id]?.muvekkil || '')}</div></td><td>${esc(h.aciklama)}<div class="kucuk soluk">${esc(h.kategori || '')}</div></td><td class="sayi">${UA.tl(h.tutar)}</td></tr>`).join('')}</tbody></table></div>` : '';
     } else if (r.konu === 'para' || r.konu === 'muvekkil') {
       if (r.hedefMuvekkil || r.konu === 'muvekkil') {
-        let l = muvekkiller().filter((m) => !r.muvekkiller.length || r.muvekkiller.includes(m.ad)).map((m) => ({ m, f: finans(m.dosyalar.filter(dosyaUyar)) }));
+        let l = muvekkiller().filter((m) => !r.muvekkiller.length || r.muvekkiller.includes(m.ad)).map((m) => { const ids = m.dosyalar.filter(dosyaUyar); return { m, ids, f: finans(ids) }; }).filter((x) => x.ids.length);
+        l = l.filter(({ ids, f }) => esikUyar({ masraf: f.masraf, avans: f.kullanilabilir, tahsil: f.bekleyen, dosya: ids.length }));
         if (r.durum.avansEksi) l = l.filter((x) => x.f.bekleyen > 0);
         if (r.sirala === 'masraf') l.sort((a, b) => b.f.masraf - a.f.masraf); else if (r.sirala === 'bakiye') l.sort((a, b) => b.f.bekleyen - a.f.bekleyen);
         if (r.limit) l = l.slice(0, r.limit);
         sayi = l.length;
-        govde = l.length ? `<div class="tablo"><table><thead><tr><th>Müvekkil</th><th class="sayi">Dosya</th><th class="sayi">Toplam masraf</th><th class="sayi">Kullanılabilir avans</th><th class="sayi">Tahsil edilecek</th></tr></thead><tbody>${l.map(({ m, f }) => `<tr class="tikla" data-eylem="muvekkil" data-id="${esc(m.id)}"><td><b>${esc(m.ad)}</b></td><td class="sayi">${m.dosyalar.length}</td><td class="sayi">${UA.tl(f.masraf)}</td><td class="sayi">${UA.tl(f.kullanilabilir)}</td><td class="sayi ${f.bekleyen ? 'eksi' : ''}">${UA.tl(f.bekleyen)}</td></tr>`).join('')}</tbody></table></div>` : '';
+        govde = l.length ? `<div class="tablo"><table><thead><tr><th>Müvekkil</th><th class="sayi">Dosya</th><th class="sayi">Toplam masraf</th><th class="sayi">Kullanılabilir avans</th><th class="sayi">Tahsil edilecek</th></tr></thead><tbody>${l.map(({ m, ids, f }) => `<tr class="tikla" data-eylem="muvekkil" data-id="${esc(m.id)}"><td><b>${esc(m.ad)}</b></td><td class="sayi">${ids.length}</td><td class="sayi">${UA.tl(f.masraf)}</td><td class="sayi">${UA.tl(f.kullanilabilir)}</td><td class="sayi ${f.bekleyen ? 'eksi' : ''}">${UA.tl(f.bekleyen)}</td></tr>`).join('')}</tbody></table></div>` : '';
       } else {
         let l = Object.keys(D.db.dosyalar).filter(dosyaUyar).map((id) => ({ id, p: paraOzet(id) })).filter((x) => x.p.hareketVar);
+        if ((r.esikler || []).length) l = l.filter(({ p }) => esikUyar({ masraf: p.toplamMasraf, avans: p.kullanilabilir, tahsil: p.bekleyen, bakiye: p.hesapAcik ? p.bakiye : null }));
         if (r.durum.avansEksi) l = l.filter((x) => x.p.bakiye < 0);
-        if (r.sirala === 'masraf') l = Object.keys(D.db.dosyalar).filter(dosyaUyar).map((id) => ({ id, p: paraOzet(id) })).filter((x) => x.p.toplamMasraf > 0).sort((a, b) => b.p.toplamMasraf - a.p.toplamMasraf);
+        if (r.sirala === 'masraf') l = l.filter((x) => x.p.toplamMasraf > 0).sort((a, b) => b.p.toplamMasraf - a.p.toplamMasraf);
         if (r.limit) l = l.slice(0, r.limit);
         sayi = l.length;
         govde = l.length ? paraTablosu(l) : '';
@@ -382,17 +392,20 @@ Köşeli parantezli etiketler gizlenmiş adlardır; aynen kullan. Emin olmadığ
       sayi = l.length;
       govde = l.length ? dosyaTablosu(l) : '';
     }
+    if (yzBekle) return `<div class="baslik"><div><h1>Sorgu</h1><div class="soluk">“${esc(D.sorgu)}”</div></div></div>
+      ${sorguKutusu(false)}
+      ${yzS?.onayGerek ? `<div class="kontrol erken alt-bosluk">Soruda maskelenemeyen bir ad olabilir: <b>${yzS.supheli.map((x) => esc(x.deger)).join(', ')}</b>. Claude'a şu hâliyle gidecek: “${esc(yzS.maskeli)}”. <button class="dugme" data-eylem="sorgu-yz-gonder">Yine de Claude'a sor</button> <button class="ikincil" data-eylem="sorgu-kural">Claude'a sorma, kurallarla ara</button></div>`
+        : `<div class="kontrol erken alt-bosluk">${yzS ? 'Claude soruyu yorumluyor… (birkaç saniye). Claude\'a yalnız soru gider, adlar maskelenir; arama bu bilgisayarda yapılır.' : 'Yapay zekâ bağlantısı kontrol ediliyor…'}</div>`}`;
     return `<div class="baslik"><div><h1>Sorgu</h1><div class="soluk">“${esc(D.sorgu)}”</div></div></div>
       ${sorguKutusu(false)}
       ${D.mod !== 'demo' && zayif && !yzBagli ? `<div class="kontrol erken alt-bosluk">Bu soruyu kurallarla anlayamadım. Claude ile yorumlamak için yapay zekâ köprüsünü açın (<code>urikem-yz/yz-baslat.command</code>).${D.yzDurum?.hata ? ` <span class="kucuk soluk">Hata: ${esc(D.yzDurum.hata)}</span>` : ''}</div>` : ''}
-      ${yzS?.bekliyor ? '<div class="kontrol erken alt-bosluk">Bu soruyu kurallarla anlayamadım; Claude yorumluyor… (birkaç saniye)</div>' : ''}
-      ${yzS?.onayGerek ? `<div class="kontrol erken alt-bosluk">Soruda maskelenemeyen bir ad olabilir: <b>${yzS.supheli.map((x) => esc(x.deger)).join(', ')}</b>. Claude'a şu hâliyle gidecek: “${esc(yzS.maskeli)}”. <button class="dugme" data-eylem="sorgu-yz-gonder">Yine de Claude'a sor</button></div>` : ''}
+      ${yzS?.kuralla ? '<div class="kontrol erken alt-bosluk">Claude\'a sorulmadı; kurallarla anlaşılan sonuç gösteriliyor. Kurallar tutar şartlarını ve karmaşık soruları anlamayabilir.</div>' : ''}
       ${yzS?.hata ? `<div class="kontrol gec alt-bosluk">Claude soruyu yorumlayamadı: ${esc(yzS.hata)} Kurallarla anlaşılan sonuç gösteriliyor.</div>` : ''}
       ${r.yz && r.anlasilan ? `<div class="kontrol uyumlu alt-bosluk"><b>Claude'un anladığı:</b> ${esc(r.anlasilan)} <span class="kucuk soluk">(Claude'a yalnız soru gitti: “${esc(yzS.maskeli)}”; arama bu bilgisayarda yapıldı.)</span></div>` : ''}
       <div class="anlasilan"><span class="kucuk soluk">${r.yz ? 'Süzgeç:' : 'Asistanın anladığı:'}</span> ${cipler.map((c) => `<span class="cip sabit">${esc(c)}</span>`).join('')} <span class="kucuk soluk">· ${sayi} sonuç</span>${yzBagli && !yzS?.bekliyor && !r.yz ? ' <button class="link" data-eylem="sorgu-yz">Claude ile yorumla</button>' : ''}</div>
       ${govde || bos('Bu soruya uyan kayıt bulunamadı. Soruyu farklı sözcüklerle deneyin ya da aşağıdaki örneklerden birini seçin.')}
       <div class="oneriler">${UA.ORNEK_SORULAR.map((q) => `<button class="cip" data-sor="${esc(q)}">${esc(q)}</button>`).join('')}</div>
-      <p class="kucuk soluk">Sorular önce bu bilgisayarda kurallarla çözülür. Kurallar anlamazsa${yzBagli ? '' : ' (yapay zekâ bağlıyken)'} yalnız soru, adlar maskelenerek Claude'a gider; Claude bir süzgeç döndürür, arama ve sonuçlar bu bilgisayarda kalır.</p>`;
+      <p class="kucuk soluk">${yzBagli ? 'Sorular Claude ile yorumlanır: yalnız soru, adlar maskelenerek gider; Claude bir süzgeç döndürür, arama ve sonuçlar bu bilgisayarda kalır.' : 'Yapay zekâ bağlı değil; sorular bu bilgisayarda kurallarla çözülüyor. Kurallar basit soruları anlar; tutar şartlı ya da karmaşık sorular için yapay zekâ köprüsünü açın.'}</p>`;
   }
 
   // ---------- duruşmalar ----------
@@ -781,12 +794,12 @@ Köşeli parantezli etiketler gizlenmiş adlardır; aynen kullan. Emin olmadığ
     return deger;
   }
   // Panel açıkken köprü sonradan açılabilir: bağlı değilse en geç 10 saniyede bir yeniden sor
-  let yzSonSoru = 0;
+  let yzSonSoru = 0, yzSoruluyor = false;
   function yzDurumTazele() {
     const bagli = D.yzDurum?.hazir && D.yzDurum?.giris;
-    if (bagli || Date.now() - yzSonSoru < 10000) return;
-    yzSonSoru = Date.now();
-    yzDurum(true).then((x) => { const degisti = JSON.stringify(x) !== JSON.stringify(D.yzDurum); D.yzDurum = x; if (degisti) sonraCiz(); });
+    if (bagli || yzSoruluyor || (D.yzDurum !== undefined && Date.now() - yzSonSoru < 10000)) return;
+    yzSonSoru = Date.now(); yzSoruluyor = true;
+    yzDurum(true).finally(() => { yzSoruluyor = false; }).then((x) => { const degisti = JSON.stringify(x) !== JSON.stringify(D.yzDurum); D.yzDurum = x; if (degisti) sonraCiz(); });
   }
   // Dilekçe ya da arama sayfası açıkken bağlantı yoksa 10 saniyede bir kendiliğinden yeniden dene
   setInterval(() => { if (D.mod !== 'demo' && ['dilekce', 'sorgu'].includes(D.sayfa) && !(D.yzDurum?.hazir && D.yzDurum?.giris)) yzDurumTazele(); }, 10000);
@@ -1070,6 +1083,7 @@ Kurallar:
       case 'yz-yenile': D.yzDurum = await yzDurum(true); return ciz();
       case 'sorgu-yz': return yzSorguYorumla(D.sorgu);
       case 'sorgu-yz-gonder': return yzSorguYorumla(D.sorgu, true);
+      case 'sorgu-kural': D.sorguYz = { soru: D.sorgu, bekliyor: false, kuralla: true }; return ciz();
       case 'dl-gonder': {
         const k = D.dilekce; if (!k?.hazirlik || !k.onay || k.bekliyor) return;
         k.bekliyor = true; k.hata = null; ciz();
@@ -1164,7 +1178,7 @@ Kurallar:
     const fd = new FormData(f), v = Object.fromEntries([...fd.entries()].filter(([, x]) => typeof x === 'string'));
     const id = f.dataset.id;
     switch (f.dataset.form) {
-      case 'sorgu': if (!v.q.trim()) return; D.sorgu = v.q.trim(); D.sayfa = 'sorgu'; D.gorunum = 'avukat'; kapat(); return ciz();
+      case 'sorgu': if (!v.q.trim()) return; document.activeElement?.blur?.(); D.sorgu = v.q.trim(); D.sayfa = 'sorgu'; D.gorunum = 'avukat'; kapat(); return ciz();
       case 'sure':
         D.elle.sureler[id] = { tebligTarihi: v.teblig, sure: { miktar: +v.miktar, birim: v.birim }, tabi: v.tabi === 'evet', sonGun: v.songun, aciklama: v.aciklama.trim() };
         D.elle.okundu[id] = D.elle.okundu[id] || new Date().toISOString(); D.acikSure = null;

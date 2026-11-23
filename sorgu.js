@@ -53,6 +53,25 @@
   }
 
   // ctx = { muvekkilAdlari: [...], birimAdlari: [...] }
+  const esikCoz = (q) => {
+    const l = [];
+    const re = /(en az|en fazla|en çok)?\s*(\d[\d.,]*)\s*(bin|milyon)?\s*(tl|lira|₺)?\s*['’]?\s*(?:[dt][ae]n|[ıiuü]n)?\s*(fazla|çok|yüksek|büyük|üstü|üstünde|üzeri|üzerinde|aşan|geçen|az|düşük|küçük|altı|altında)?(\s+dosya)?/g;
+    for (const m of q.matchAll(re)) {
+      const [tam, en, sayi, kat, para, kar, dosya] = m;
+      if (!en && !kar) continue;
+      const sonra = q.slice(m.index + tam.length, m.index + tam.length + 8);
+      if (/^\s*(gün|gun|hafta|ay|yıl|saat)/.test(sonra) || /\/\s*$/.test(q.slice(0, m.index + (m[0].indexOf(sayi))))) continue;
+      let v = parseFloat(sayi.replace(/\.(?=\d{3}\b)/g, '').replace(',', '.'));
+      if (!Number.isFinite(v)) continue;
+      if (kat === 'bin') v *= 1000; else if (kat === 'milyon') v *= 1e6;
+      const op = en === 'en az' ? '>=' : en ? '<=' : /^(az|düşük|küçük|alt)/.test(kar) ? '<' : '>';
+      const alan = dosya || (!para && !kat && /dosya/.test(sonra + ' ' + q.slice(m.index + tam.length, m.index + tam.length + 20)) && !/masraf|avans|tahsil|bakiye/.test(q)) ? 'dosya'
+        : /avans/.test(q) ? 'avans' : /tahsil|alacak|borç/.test(q) ? 'tahsil' : /bakiye/.test(q) ? 'bakiye' : 'masraf';
+      l.push({ alan, op, deger: v });
+    }
+    return l;
+  };
+
   UA.sorguCoz = (metin, ctx = {}, bugun = new Date()) => {
     const q = kucuk(metin);
     const sonuc = { metin, konu: konuCoz(q), zaman: zamanCoz(q, bugun), tur: null, muvekkiller: [], birimler: [], dosyaNo: null, durum: {}, hedefMuvekkil: /müvekkil|muvekkil/.test(q) };
@@ -71,6 +90,10 @@
     if (/girilmemiş|girmediğim|girilmedi/.test(q)) sonuc.durum.suresiz = true;
     if (/uyumsuz|hatalı|yanlış|tutmayan/.test(q)) sonuc.durum.uyumsuz = true;
     if (/kapan|bitmiş dosya/.test(q) && sonuc.konu === 'dosya') sonuc.durum.kapali = true;
+    // Tutar / sayı şartları: "5000 TL'den fazla masraf", "en az 3 dosyası olan", "10 binin altında avans"
+    sonuc.esikler = esikCoz(q);
+    if (sonuc.esikler.length && ['dosya', 'muvekkil'].includes(sonuc.konu)) sonuc.konu = sonuc.hedefMuvekkil ? 'muvekkil' : 'para';
+    if (sonuc.esikler.length && sonuc.konu === 'para' && sonuc.hedefMuvekkil) sonuc.konu = 'muvekkil';
     // "Yarın ne var?" gibi yalnız zaman soran sorular: o aralıktaki bütün işler
     if (sonuc.konu === 'dosya' && sonuc.zaman && !sonuc.muvekkiller.length && !sonuc.dosyaNo && !sonuc.birimler.length) sonuc.konu = 'ajanda';
     return sonuc;
