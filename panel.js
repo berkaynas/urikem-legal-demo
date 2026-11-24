@@ -41,17 +41,32 @@
   // Excel için: noktalı virgülle ayrılmış, Türkçe karakterli CSV (Excel'de doğrudan açılır)
   const indir = (ad, metin, tur) => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([metin], { type: tur })); a.download = ad; a.click(); };
   const csv = (satirlar) => '\ufeff' + satirlar.map((r) => r.map((h) => { const x = String(h ?? ''); return /[;"\n]/.test(x) ? `"${x.replace(/"/g, '""')}"` : x; }).join(';')).join('\r\n');
-  const DEMO_SURUM = 5;
+  const DEMO_SURUM = 6;
   const anahtar = () => (D.mod === 'demo' ? { db: 'demoDb', elle: 'demoElle' } : { db: 'db', elle: 'elle' });
 
   const D = {
     mod: 'demo', sayfa: 'ozet', gorunum: 'avukat', portalMuv: null, db: UA.bos(), elle: {},
     sorgu: '', evrakFiltre: 'yeni', paraFiltre: 'hepsi', acikSure: null, cekmece: null, modal: null, onay: null,
     gorusme: 'g-1', ozetAcik: false, bildirim: '', dokum: { bas: '', bit: '' },
+    kullaniciId: null, kulMenu: false, buroSekme: 'ekip', dosyaSahip: 'hepsi', gecmisKim: '', basvuruForm: false,
   };
   const elleBos = () => ({ dosyalar: {}, sureler: {}, okundu: {}, muvekkiller: {}, gorusmeler: [], kronoloji: {}, isler: [], ayarlar: {}, gecmis: [] });
   // İşlem geçmişi: masraf, avans, süre, müvekkil ve paylaşım değişiklikleri kimin ne zaman yaptığıyla tutulur.
-  const iz = (dosyaId, ne) => { const g = (D.elle.gecmis = D.elle.gecmis || []); g.push({ zaman: new Date().toISOString(), kim: D.elle.ayarlar?.avukatAdi || '', dosyaId: dosyaId || null, ne }); if (g.length > 5000) g.splice(0, g.length - 5000); };
+  const iz = (dosyaId, ne) => { const g = (D.elle.gecmis = D.elle.gecmis || []); g.push({ zaman: new Date().toISOString(), kim: buroVar() ? ben()?.ad || '' : D.elle.ayarlar?.avukatAdi || '', dosyaId: dosyaId || null, ne }); if (g.length > 5000) g.splice(0, g.length - 5000); };
+
+  // ---------- büro (çok kullanıcılı) ----------
+  // Şimdilik yalnız demoda: büro hesabı, kullanıcılar, roller. Gerçek eklenti tek avukatlık çalışmaya devam eder.
+  // Kullanıcı seçilince veri en başta onun yetkisiyle süzülür (D.db); arama, yapay zekâ, özet ve listeler yalnız bunu görür.
+  // Büronun bütün verisi D.tamDb'de durur; yalnız çıkar çatışması kontrolü ona bakar.
+  const buroVar = () => D.mod === 'demo' && !!D.elle.buro;
+  const ben = () => (buroVar() ? UA.buro.kullanici(D.elle.buro, D.kullaniciId) : null);
+  const sev = (modul) => (buroVar() ? UA.buro.seviye(D.elle.buro, ben(), modul) : 'tam');
+  const yazar = (modul, id) => !buroVar() || UA.buro.yazabilir(D.elle.buro, ben(), modul, D.elle.dosyalar[id]);
+  const yonetici = () => !buroVar() || sev('buro') === 'tam';
+  const kulAd = (id) => (buroVar() && UA.buro.kullanici(D.elle.buro, id)?.ad) || '—';
+  const ilkAd = (ad) => String(ad || '').replace(/^(Stj\.\s*)?Av\.\s*/, '').split(' ')[0];
+  const kullanicilar = () => (D.elle.buro?.kullanicilar || []).filter((k) => k.durum !== 'pasif');
+  const kapsamUygula = () => { D.db = buroVar() && ben() ? UA.buro.kapsamla(D.tamDb, D.elle, D.elle.buro, ben()) : D.tamDb; };
 
   async function yukle() {
     const k = anahtar();
@@ -63,6 +78,8 @@
     }
     D.db = v[k.db] && v[k.db].surum ? UA.dbBuda(UA.dbDuzelt(v[k.db])) : UA.bos();
     D.elle = Object.assign(elleBos(), v[k.elle] || {});
+    D.tamDb = D.db;
+    if (buroVar()) { const kv = await al(['demoKullanici']); D.kullaniciId = UA.buro.kullanici(D.elle.buro, kv.demoKullanici) ? kv.demoKullanici : null; kapsamUygula(); }
     let elleDegisti = D.mod === 'canli' && UA.elleDuzelt(D.elle, D.db);
     if (D.mod === 'canli' && D.elle.ayarlar?.avukatAdi && UA.otoMuvekkil(D.db, D.elle, D.elle.ayarlar.avukatAdi)) elleDegisti = true;
     // Saklama süresi dolan görüşme ses kayıtlarını sil
@@ -74,7 +91,7 @@
     const ek = await al(['sablonlar', 'sonSenkron', 'uyapSinyal', 'sonYakalama']);
     D.sablonlar = ek.sablonlar || {}; D.sonSenkron = ek.sonSenkron || null; D.uyapSinyal = ek.uyapSinyal || null; D.sonYakalama = ek.sonYakalama || null;
   }
-  const kaydet = async () => { await koy({ [anahtar().elle]: D.elle }); ciz(); };
+  const kaydet = async () => { await koy({ [anahtar().elle]: D.elle }); if (buroVar()) kapsamUygula(); ciz(); };
   const dosyaElle = (id) => (D.elle.dosyalar[id] = D.elle.dosyalar[id] || { hareketler: [] });
   const bildir = (m) => { D.bildirim = m; ciz(); setTimeout(() => { if (D.bildirim === m) { D.bildirim = ''; const b = $('#bildirim'); if (b) b.hidden = true; } }, 3500); };
 
@@ -97,7 +114,7 @@
       liste.push({ id: 'ad:' + e.muvekkil, ad: e.muvekkil, tur: '', sanal: true });
     }
     for (const m of liste) m.dosyalar = Object.keys(D.db.dosyalar).filter((id) => { const e = D.elle.dosyalar[id] || {}; return e.muvekkilId === m.id || e.muvekkil === m.ad; });
-    return liste.sort((a, b) => b.dosyalar.length - a.dosyalar.length || a.ad.localeCompare(b.ad, 'tr'));
+    return liste.filter((m) => !buroVar() || sev('dosya') === 'tam' || m.dosyalar.length).sort((a, b) => b.dosyalar.length - a.dosyalar.length || a.ad.localeCompare(b.ad, 'tr'));
   });
   const muvekkilBul = (id) => muvekkiller().find((m) => m.id === id);
   const durusmalar = bellekte(() => Object.values(D.db.durusmalar).filter((d) => d.tarihSaat && UA.gun(d.tarihSaat) >= bugun()).sort((a, b) => a.tarihSaat.localeCompare(b.tarihSaat)));
@@ -188,9 +205,10 @@
     const dr = durusmalar(), hafta = dr.filter((d) => gunFarki(d.tarihSaat) <= 7);
     const yeni = okunmamis(), sr = sureler().filter((s) => s.kalan >= 0), f = finans();
     const sorunlu = sureler().filter((s) => s.kontrol && s.kontrol.durum === 'gec');
-    const isler = (D.elle.isler || []).filter((i) => !i.bitti);
+    const isler = (D.elle.isler || []).filter((i) => !i.bitti && (!buroVar() || i.atananId === ben()?.id));
+    const atadiklarim = buroVar() ? (D.elle.isler || []).filter((i) => !i.bitti && i.atayanId === ben()?.id && i.atananId !== ben()?.id) : [];
     return `
-      <div class="baslik"><div><h1>Günaydın</h1><div class="soluk">${new Date().toLocaleDateString('tr-TR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} · ${Object.keys(D.db.dosyalar).length} dosya, ${muvekkiller().length} müvekkil${D.mod === 'canli' && D.sonSenkron && D.sonSenkron.durum === 'tamam' ? ` · UYAP'tan son okuma: ${zamanOnce(D.sonSenkron.zaman)}` : ''}</div></div>${D.mod === 'canli' && eklentide ? guncelleDugmesi(false) : ''}</div>
+      <div class="baslik"><div><h1>Günaydın${buroVar() ? ', ' + esc(ilkAd(ben()?.ad)) : ''}</h1><div class="soluk">${new Date().toLocaleDateString('tr-TR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}${buroVar() ? ` · ${esc(UA.buro.ROLLER[ben()?.rol]?.ad || '')}` : ''} · ${Object.keys(D.db.dosyalar).length} dosya, ${muvekkiller().length} müvekkil${D.mod === 'canli' && D.sonSenkron && D.sonSenkron.durum === 'tamam' ? ` · UYAP'tan son okuma: ${zamanOnce(D.sonSenkron.zaman)}` : ''}</div></div>${D.mod === 'canli' && eklentide ? guncelleDugmesi(false) : ''}</div>
       ${D.mod === 'canli' ? baglantiDurumu() : ''}
       ${D.mod === 'canli' && D.sonSenkron?.durum === 'hata' ? `<div class="kontrol gec alt-bosluk"><b>Son okuma tamamlanamadı:</b> ${esc(D.sonSenkron.hata)}</div>` : ''}
       ${D.mod === 'canli' && !(D.sablonlar || {})['avukat_durusma_sorgula_brd.ajx'] ? '<div class="kontrol erken alt-bosluk"><b>Duruşmalar henüz okunamıyor.</b> UYAP\'ta UYAP İşlemlerim → Duruşma Sorgula ekranında bir kez Sorgula\'ya basın; sonra "güncelle".</div>' : ''}
@@ -208,7 +226,8 @@
             <li><div class="tarih">${UA.trTarih(s.sonGun)}<div class="kucuk soluk">${kalanMetin(s.kalan)}</div></div>
             <div class="ana"><div>${esc(s.aciklama || s.evrak.tur)}</div><div class="kucuk soluk">${esc(dosyaAdi(evrakDosya(s.evrak)))}</div>
             ${s.kontrol && s.kontrol.durum === 'gec' ? '<span class="rozet r-kirmizi">Tarih hesaptan geç</span>' : s.kontrol && s.kontrol.durum === 'uyumlu' ? '<span class="rozet r-yesil">Kontrol edildi</span>' : ''}</div></li>`).join('')}</ul>` : bos('Son günü girilmiş bir iş yok.')}</div>
-          ${isler.length ? `<div class="blok"><h2>Yapılacaklar</h2><ul class="liste">${isler.map((i) => `<li><input type="checkbox" id="is-${esc(i.id)}" data-eylem="is-bitti" data-id="${esc(i.id)}" aria-label="Tamamlandı"><div class="ana"><label for="is-${esc(i.id)}">${esc(i.is)}</label><div class="kucuk soluk">${esc(i.kaynak || '')}${i.son ? ' · son: ' + UA.trTarih(i.son) : ''}</div></div></li>`).join('')}</ul></div>` : ''}
+          ${isler.length ? `<div class="blok"><h2>${buroVar() ? 'Bana atanan işler' : 'Yapılacaklar'}</h2><ul class="liste">${isler.map((i) => `<li><input type="checkbox" id="is-${esc(i.id)}" data-eylem="is-bitti" data-id="${esc(i.id)}" aria-label="Tamamlandı"><div class="ana"><label for="is-${esc(i.id)}">${esc(i.is)}</label><div class="kucuk soluk">${i.dosyaId && D.db.dosyalar[i.dosyaId] ? `<button class="link" data-eylem="dosya" data-id="${esc(i.dosyaId)}">${esc(dosyaAdi(i.dosyaId))}</button> · ` : ''}${esc(i.kaynak || '')}${i.son ? ' · son: ' + UA.trTarih(i.son) : ''}</div></div></li>`).join('')}</ul></div>` : ''}
+          ${atadiklarim.length ? `<div class="blok"><h2>Başkalarına verdiğim işler</h2><ul class="liste">${atadiklarim.map((i) => `<li><span class="avatar kucuk" aria-hidden="true">${esc(ilkAd(kulAd(i.atananId)).slice(0, 1))}</span><div class="ana"><div>${esc(i.is)}</div><div class="kucuk soluk">${esc(kulAd(i.atananId))}${i.dosyaId && D.db.dosyalar[i.dosyaId] ? ' · ' + esc(dosyaAdi(i.dosyaId)) : ''}${i.son ? ' · son: ' + UA.trTarih(i.son) : ''}</div></div></li>`).join('')}</ul></div>` : ''}
         </div>
         <div>
           <div class="blok"><h2>Bu hafta duruşmalar</h2>${hafta.length ? `<ul class="liste">${hafta.map((d) => `
@@ -224,6 +243,8 @@
     const s = [];
     for (const x of sorunlu) s.push(`<li><span class="rozet r-kirmizi">Süre</span><div class="ana"><b>${esc(x.aciklama || x.evrak.tur)}</b>: girilen son gün (${UA.trTarih(x.sonGun)}) asistanın hesabından ${x.kontrol.fark} gün sonra. <button class="link" data-eylem="sure-ac" data-id="${esc(x.id)}">Hesabı gör</button></div></li>`);
     for (const e of suresizTebligat()) s.push(`<li><span class="rozet r-teb">Tebligat</span><div class="ana">${esc(dosyaAdi(evrakDosya(e)))}: <b>${esc(e.tur)}</b> geldi, son günü girilmedi. <button class="link" data-eylem="sure-ac" data-id="${esc(e.evrakId)}">Son günü gir</button></div></li>`);
+    const bekleyenOnay = buroVar() && yonetici() ? (D.elle.buro.onaylar || []).filter((o) => o.durum === 'bekliyor') : [];
+    if (bekleyenOnay.length) s.push(`<li><span class="rozet r-teb">Onay</span><div class="ana"><b>${bekleyenOnay.length} masraf</b> onayınızı bekliyor (${bekleyenOnay.map((o) => esc(ilkAd(kulAd(o.isteyenId))) + ': ' + UA.tl(o.hareket.tutar)).join(', ')}). <button class="link" data-eylem="buro-sekme" data-id="onay">Onaylara git</button></div></li>`);
     for (const b of avansiBiten()) s.push(`<li><span class="rozet r-kirmizi">Avans</span><div class="ana">${esc(D.elle.dosyalar[b.id]?.muvekkil || dosyaAdi(b.id))}: avans bitti, ${tutar(b.p.bekleyen)} tahsil edilecek. <button class="link" data-eylem="dosya" data-id="${esc(b.id)}">Dosyayı aç</button></div></li>`);
     return s.length ? `<div class="blok vurgulu"><h2>Dikkat edilecekler</h2><ul class="liste">${s.join('')}</ul></div>` : '';
   }
@@ -262,7 +283,7 @@ Dosya türleri: ${ctx.turler.join(', ')}. Dosya durumları: ${ctx.durumlar.join(
 Tutar ya da sayı şartı varsa ("5000 TL'den fazla", "10 binin altında", "3'ten çok dosyası olan") mutlaka esikler'e yaz; "fazla/üstünde" ">", "en az" ">=", "az/altında" "<", "en fazla" "<=". Müvekkil soruluyorsa konu muvekkil, dosya soruluyorsa konu para olur. "5 bin", "5.000", "5000 TL" hepsi 5000'dir.
 Köşeli parantezli etiketler gizlenmiş adlardır; aynen kullan. Emin olmadığın alanı boş bırak.`;
   function sorguMaskele(soru) {
-    const adlar = muvekkiller().map((m) => m.ad).filter((a) => a && !/\*{2,}/.test(a));
+    const adlar = [...new Set([...muvekkiller().map((m) => m.ad), ...Object.values(D.elle.dosyalar || {}).map((e) => e.muvekkil)])].filter((a) => a && !/\*{2,}/.test(a));
     const liste = adlar.map((a, i) => `[Müvekkil ${i + 1}] = ${a}`).join('\n');
     const h = UA.anonimlestir(soru, liste);
     return { ...h, supheli: supheliSuz(h.supheliler, h.anonim) };
@@ -289,6 +310,7 @@ Köşeli parantezli etiketler gizlenmiş adlardır; aynen kullan. Emin olmadığ
     try {
       const ctx = { bugun: UA.iso(new Date()), turler: [...new Set(Object.values(D.db.dosyalar).map((d) => d.dosyaTur).filter(Boolean))], durumlar: [...new Set(Object.values(D.db.dosyalar).map((d) => String(d.dosyaDurum || '').replace(/\s*\(.*$/, '')).filter(Boolean))] };
       const ham = await yzUret(SORGU_SISTEM(ctx), m.anonim, 'low');
+      if (buroVar()) { iz(null, 'Yapay zekâ ile arama: yalnız soru gitti, adlar maskelendi'); koy({ [anahtar().elle]: D.elle }); }
       const acik = UA.geriCevir(ham, m);
       const j = JSON.parse((acik.match(/\{[\s\S]*\}/) || [''])[0]);
       if (D.sorgu === soru) D.sorguYz = { soru, bekliyor: false, maskeli: m.anonim, filtre: yzSuzgecCevir(j, soru) };
@@ -405,6 +427,7 @@ Köşeli parantezli etiketler gizlenmiş adlardır; aynen kullan. Emin olmadığ
       <div class="anlasilan"><span class="kucuk soluk">${r.yz ? 'Süzgeç:' : 'Asistanın anladığı:'}</span> ${cipler.map((c) => `<span class="cip sabit">${esc(c)}</span>`).join('')} <span class="kucuk soluk">· ${sayi} sonuç</span>${yzBagli && !yzS?.bekliyor && !r.yz ? ' <button class="link" data-eylem="sorgu-yz">Claude ile yorumla</button>' : ''}</div>
       ${govde || bos('Bu soruya uyan kayıt bulunamadı. Soruyu farklı sözcüklerle deneyin ya da aşağıdaki örneklerden birini seçin.')}
       <div class="oneriler">${UA.ORNEK_SORULAR.map((q) => `<button class="cip" data-sor="${esc(q)}">${esc(q)}</button>`).join('')}</div>
+      ${buroVar() ? `<p class="kucuk soluk">Arama ve yapay zekâ yalnız sizin görebildiğiniz ${Object.keys(D.db.dosyalar).length} dosyayı kullanır (büroda ${Object.keys(D.tamDb.dosyalar).length} dosya var).</p>` : ''}
       <p class="kucuk soluk">${yzBagli ? 'Sorular Claude ile yorumlanır: yalnız soru, adlar maskelenerek gider; Claude bir süzgeç döndürür, arama ve sonuçlar bu bilgisayarda kalır.' : 'Yapay zekâ bağlı değil; sorular bu bilgisayarda kurallarla çözülüyor. Kurallar basit soruları anlar; tutar şartlı ya da karmaşık sorular için yapay zekâ köprüsünü açın.'}</p>`;
   }
 
@@ -512,17 +535,30 @@ Köşeli parantezli etiketler gizlenmiş adlardır; aynen kullan. Emin olmadığ
   // ---------- dosyalar ----------
   function dosyaTablosu(liste, kisa) {
     const dr = durusmalar();
-    return `<div class="tablo"><table><thead><tr><th>Mahkeme / dosya</th><th>Tür</th>${kisa ? '' : '<th>Müvekkil</th>'}<th>Sonraki duruşma</th><th>Evrak</th><th class="sayi">Avans bakiyesi</th></tr></thead><tbody>${liste.filter(Boolean).map((d) => {
+    return `<div class="tablo"><table><thead><tr><th>Mahkeme / dosya</th><th>Tür</th>${kisa ? '' : '<th>Müvekkil</th>'}${buroVar() ? '<th>Sorumlu</th>' : ''}<th>Sonraki duruşma</th><th>Evrak</th><th class="sayi">Avans bakiyesi</th></tr></thead><tbody>${liste.filter(Boolean).map((d) => {
       const sonraki = sonrakiDurusma()[d.dosyaId];
       const yeni = (dosyaOkunmamis()[d.dosyaId] || []).length;
       const p = paraOzet(d.dosyaId), e = D.elle.dosyalar[d.dosyaId] || {};
       return `<tr class="tikla" data-eylem="dosya" data-id="${esc(d.dosyaId)}"><td>${esc(kisaBirim(d.birimAdi))}<br><b>${esc(d.dosyaNo)}</b></td><td>${esc(d.dosyaTur || '')}<div class="kucuk soluk">${esc(d.dosyaDurum || '')}</div></td>
-        ${kisa ? '' : `<td>${esc(e.muvekkil || '—')}</td>`}<td>${sonraki ? `${UA.trTarih(sonraki.tarihSaat)} ${UA.trSaat(sonraki.tarihSaat)}` : '<span class="soluk">—</span>'}</td>
+        ${kisa ? '' : `<td>${esc(e.muvekkil || '—')}</td>`}${buroVar() ? `<td>${esc(kulAd(e.sorumluId))}${(e.ekip || []).length ? `<div class="kucuk soluk">+ ${e.ekip.map((x) => esc(ilkAd(kulAd(x)))).join(', ')}</div>` : ''}${e.gizli ? '<span class="rozet r-kirmizi">Gizli</span>' : ''}${(e.kaynaklar || []).length > 1 ? '<span class="rozet r-gri">Ortak vekâlet</span>' : ''}</td>` : ''}<td>${sonraki ? `${UA.trTarih(sonraki.tarihSaat)} ${UA.trSaat(sonraki.tarihSaat)}` : '<span class="soluk">—</span>'}</td>
         <td>${yeni ? `<span class="rozet r-yeni">${yeni} yeni</span>` : ''}</td><td class="sayi ${p.bakiye < 0 ? 'eksi' : ''}">${p.hareketVar ? UA.tl(p.bakiye) : '<span class="soluk">—</span>'}</td></tr>`;
     }).join('')}</tbody></table></div>`;
   }
-  const dosyaSayfa = () => `<div class="baslik"><div><h1>Dosyalar</h1><div class="soluk">Son okuma: ${zamanOnce(D.db.senkron.dosyalar)}. Dosya no, mahkeme, tür ve durum UYAP'tan gelir.</div></div></div>
-    ${Object.keys(D.db.dosyalar).length ? dosyaTablosu(Object.values(D.db.dosyalar).sort((a, b) => String(a.birimAdi).localeCompare(String(b.birimAdi), 'tr'))) : bos('Henüz dosya yok. UYAP\'ta Dosya Sorgula ekranını çalıştırın.')}`;
+  const dosyaSayfa = () => {
+    let l = Object.values(D.db.dosyalar).sort((a, b) => String(a.birimAdi).localeCompare(String(b.birimAdi), 'tr'));
+    let filtre = '';
+    if (buroVar()) {
+      const e = (d) => D.elle.dosyalar[d.dosyaId] || {}, me = ben()?.id;
+      const secenek = [['hepsi', 'Tümü', l.length], ['benim', 'Benim', l.filter((d) => UA.buro.ekipte(ben(), e(d))).length],
+        ...kullanicilar().filter((k) => k.id !== me && ['ortak', 'avukat'].includes(k.rol)).map((k) => [k.id, ilkAd(k.ad), l.filter((d) => e(d).sorumluId === k.id).length]).filter((x) => x[2])];
+      if (l.some((d) => e(d).gizli)) secenek.push(['gizli', 'Gizli', l.filter((d) => e(d).gizli).length]);
+      const sec = secenek.some((x) => x[0] === D.dosyaSahip) ? D.dosyaSahip : 'hepsi';
+      filtre = `<div class="filtre alt-bosluk" role="group" aria-label="Sorumluya göre">${secenek.map(([k, ad, n]) => `<button data-eylem="dosya-sahip" data-id="${esc(k)}" aria-pressed="${sec === k}">${esc(ad)} (${n})</button>`).join('')}</div>`;
+      l = l.filter((d) => sec === 'hepsi' || (sec === 'benim' ? UA.buro.ekipte(ben(), e(d)) : sec === 'gizli' ? e(d).gizli : e(d).sorumluId === sec));
+    }
+    return `<div class="baslik"><div><h1>Dosyalar</h1><div class="soluk">Son okuma: ${zamanOnce(D.db.senkron.dosyalar)}. Dosya no, mahkeme, tür ve durum UYAP'tan gelir.${buroVar() ? ` Büroda ${Object.keys(D.tamDb.dosyalar).length} dosya var; siz ${Object.keys(D.db.dosyalar).length} tanesini görüyorsunuz.` : ''}</div></div></div>
+    ${filtre}${l.length ? dosyaTablosu(l) : bos(buroVar() ? 'Bu süzgece uyan dosya yok.' : 'Henüz dosya yok. UYAP\'ta Dosya Sorgula ekranını çalıştırın.')}`;
+  };
 
   // ---------- masraf ve avans ----------
   function paraTablosu(l) {
@@ -559,22 +595,24 @@ Köşeli parantezli etiketler gizlenmiş adlardır; aynen kullan. Emin olmadığ
   const SINIF_ROZET = (s) => s.once ? ' <span class="rozet r-gri">Dosyayı almadan önce</span>' : s.baskaDosya ? ' <span class="rozet r-gri">İlgili dosyanın ödemesi, burada sayılmaz</span>' : s.sinif === 'teminat' ? ' <span class="rozet r-gri">Teminat · iade edilir</span>' : s.sinif === 'borc' ? ' <span class="rozet r-gri">Borçludan tahsilat</span>' : s.kim === 'muvekkil' ? ' <span class="rozet r-gri">Müvekkil ödedi</span>' : '';
   function paraBileseni(id, portal) {
     const p = paraOzet(id), e = dosyaElle(id), uy = D.db.para[id];
+    const salt = !portal && !yazar('para', id);
     const satir = (ad, v, cls = '') => `<div class="ozet-satir ${cls}"><span>${ad}</span>${tutar(v)}</div>`;
     const ozetHtml = `<div class="blok"><h2>Hesap özeti</h2>
       ${satir('Müvekkilden alınan avans', p.avans)}${p.tahsilat ? satir('Masraf tahsilatları', p.tahsilat) : ''}${p.iade ? satir('Avans iadesi', -p.iade) : ''}
       ${satir('Müvekkile yansıtılan masraflar', -p.yansitilan)}
       ${satir(p.bakiye >= 0 ? 'Kullanılabilir avans' : 'Müvekkilden tahsil edilecek', p.bakiye, 'toplam')}
       ${!portal && p.buroda ? `<div class="kucuk soluk">Büronun üstlendiği (müvekkile yansıtılmayan) masraf: ${UA.tl(p.buroda)}</div>` : ''}
-      ${!portal ? `<div class="ozet-satir"><span>Vekâlet ücreti</span><form data-form="vekalet" data-id="${esc(id)}" class="yan"><label class="gizli" for="vek-${esc(id)}">Vekâlet ücreti</label><input id="vek-${esc(id)}" type="number" step="0.01" min="0" name="ucret" value="${esc(e.vekaletUcreti || '')}" class="orta" placeholder="0,00"><button class="ikincil">Kaydet</button></form></div>
+      ${salt ? satir('Vekâlet ücreti', e.vekaletUcreti || 0) : ''}${!portal && !salt ? `<div class="ozet-satir"><span>Vekâlet ücreti</span><form data-form="vekalet" data-id="${esc(id)}" class="yan"><label class="gizli" for="vek-${esc(id)}">Vekâlet ücreti</label><input id="vek-${esc(id)}" type="number" step="0.01" min="0" name="ucret" value="${esc(e.vekaletUcreti || '')}" class="orta" placeholder="0,00"><button class="ikincil">Kaydet</button></form></div>
       ${p.vekalet ? satir('Kapanışta müvekkilden istenecek (ücret − bakiye)', p.kapanistaIstenecek, 'toplam') : ''}` : ''}
+      ${salt && p.vekalet ? satir('Kapanışta müvekkilden istenecek (ücret − bakiye)', p.kapanistaIstenecek, 'toplam') : ''}
       ${p.iadeEdilebilir ? `<div class="kucuk soluk ust-bosluk">UYAP veznesinde henüz harcanmamış ${UA.tl(p.iadeEdilebilir)} gider avansı var. Dava bitince kullanılmayanı iade edilir.</div>` : ''}
     </div>`;
-    const devralmaHtml = !portal && uy ? `<form class="yan alt-bosluk" data-form="devralma" data-id="${esc(id)}"><label>Dosyayı aldığım tarih<input type="date" name="tarih" id="dev-${esc(id)}" value="${esc(e.devralma || '')}"></label><button class="ikincil">Kaydet</button>
+    const devralmaHtml = !portal && !salt && uy ? `<form class="yan alt-bosluk" data-form="devralma" data-id="${esc(id)}"><label>Dosyayı aldığım tarih<input type="date" name="tarih" id="dev-${esc(id)}" value="${esc(e.devralma || '')}"></label><button class="ikincil">Kaydet</button>
       <span class="kucuk soluk">${e.devralma ? 'Bu tarihten önceki ödemeler hesaba girmez.' : p.devralmaOtomatik ? `Girilmedi: adınıza ilk ödemenin tarihi (${UA.trTarih(UA.tarihCoz(p.devralmaOtomatik))}) kabul ediliyor; ondan önce başkalarının yaptığı ödemeler hesaba girmez.` : 'Dosyayı başka avukattan aldıysanız girin; önceki ödemeler hesaba girmez.'}${p.onceki ? ` Önceki dönem: ${UA.tl(p.onceki)}.` : ''}</span></form>` : '';
     const uyapHtml = `<div class="blok"><h2>UYAP'tan gelen masraflar <span class="kucuk soluk">(Tah./Red. Bilgileri, ${uy ? zamanOnce(uy.guncelleme) : 'henüz okunmadı'})</span></h2>${devralmaHtml}
       ${uy ? `<div class="tablo"><table><thead><tr>${portal ? '' : '<th>Bizim</th><th>Yansıt</th>'}<th>Tarih</th><th>Kalem</th>${portal ? '' : '<th>Ödeyen</th>'}<th class="sayi">Tutar</th></tr></thead><tbody>
-        ${p.uyapSatirlar.filter((s) => !portal || (s.bizim && s.yansit)).map((s) => `<tr>${portal ? '' : `<td><input type="checkbox" data-eylem="satir-sec" data-id="${esc(id)}" data-kayit="${esc(s.kayitId)}" ${s.bizim ? 'checked' : ''} aria-label="Bizim ödememiz"></td>
-          <td><input type="checkbox" data-eylem="uyap-yansit" data-id="${esc(id)}" data-kayit="${esc(s.kayitId)}" ${s.yansit ? 'checked' : ''} ${s.bizim ? '' : 'disabled'} aria-label="Müvekkile yansıt"></td>`}
+        ${p.uyapSatirlar.filter((s) => !portal || (s.bizim && s.yansit)).map((s) => `<tr>${portal ? '' : `<td><input type="checkbox" data-eylem="satir-sec" data-id="${esc(id)}" data-kayit="${esc(s.kayitId)}" ${s.bizim ? 'checked' : ''} ${salt ? 'disabled' : ''} aria-label="Bizim ödememiz"></td>
+          <td><input type="checkbox" data-eylem="uyap-yansit" data-id="${esc(id)}" data-kayit="${esc(s.kayitId)}" ${s.yansit ? 'checked' : ''} ${s.bizim && !salt ? '' : 'disabled'} aria-label="Müvekkile yansıt"></td>`}
           <td>${UA.trTarih(s.tarih)}</td><td>${esc(s.kalem)}<div class="kucuk soluk">${esc(s.kategori)}${s.makbuzNo ? ' · makbuz ' + esc(s.makbuzNo) : ''}</div>${portal ? '' : SINIF_ROZET(s)}</td>${portal ? '' : `<td class="kucuk">${esc(s.odeyen)}<div class="soluk">${{ avukat: 'siz', muvekkil: 'müvekkil', baskasi: 'başkası', bilinmiyor: '' }[s.kim] || ''}</div></td>`}
           <td class="sayi">${UA.tl(s.tutar)}</td></tr>`).join('')}
       </tbody></table></div>${portal ? '' : '<div class="kucuk soluk">Yalnız ödeyeni sizin adınız olan masraflar otomatik "bizim" işaretlenir. Müvekkilin kendi ödediği, teminat ve borçludan tahsilat satırları hesaba girmez. Gerekirse kutucukla değiştirebilirsiniz.</div>'}`
@@ -591,15 +629,17 @@ Köşeli parantezli etiketler gizlenmiş adlardır; aynen kullan. Emin olmadığ
       ${hareketler.length ? `<div class="tablo"><table><thead><tr><th>Tarih</th><th>Tür</th><th>Açıklama</th>${portal ? '' : '<th>Belge</th>'}<th class="sayi">Tutar</th>${portal ? '' : '<th></th>'}</tr></thead><tbody>
         ${hareketler.map((h) => `<tr><td>${UA.trTarih(UA.tarihCoz(h.tarih))}</td><td>${{ avans: '<span class="rozet r-yesil">Avans</span>', gider: '<span class="rozet r-gri">Masraf</span>', tahsilat: '<span class="rozet r-yesil">Tahsilat</span>', iade: '<span class="rozet r-teb">İade</span>' }[h.tur]}${h.tur === 'gider' && h.yansit === false && !portal ? ' <span class="rozet r-gri">Büroda</span>' : ''}</td>
           <td>${esc(h.aciklama)}<div class="kucuk soluk">${esc([h.kategori, h.odemeYontemi, h.odeyen].filter(Boolean).join(' · '))}</div></td>
-          ${portal ? '' : `<td class="kucuk">${h.belge ? (h.belge.id ? `<button class="link" data-eylem="belge-ac" data-b="${esc(h.belge.id)}" data-ad="${esc(h.belge.ad)}">📎 ${esc(h.belge.ad)}</button>` : `📎 ${esc(h.belge.ad)} <span class="soluk">(dosyası saklanmamış)</span>`) : h.tur === 'gider' ? `<label class="link">Belge ekle<input type="file" class="gizli" data-eylem="belge" data-id="${esc(id)}" data-h="${esc(h.id)}" accept=".pdf,.jpg,.jpeg,.png"></label>` : ''}</td>`}
-          <td class="sayi">${UA.tl(h.tutar)}</td>${portal ? '' : `<td><button class="link" data-eylem="hareket-sil" data-id="${esc(id)}" data-h="${esc(h.id)}">Sil</button></td>`}</tr>`).join('')}</tbody></table></div>` : bos('Kayıt yok.')}
-      ${portal ? '' : `<form class="form" data-form="hareket" data-id="${esc(id)}">
+          ${portal ? '' : `<td class="kucuk">${h.belge ? (h.belge.id ? `<button class="link" data-eylem="belge-ac" data-b="${esc(h.belge.id)}" data-ad="${esc(h.belge.ad)}">📎 ${esc(h.belge.ad)}</button>` : `📎 ${esc(h.belge.ad)} <span class="soluk">(dosyası saklanmamış)</span>`) : h.tur === 'gider' && !salt ? `<label class="link">Belge ekle<input type="file" class="gizli" data-eylem="belge" data-id="${esc(id)}" data-h="${esc(h.id)}" accept=".pdf,.jpg,.jpeg,.png"></label>` : ''}</td>`}
+          <td class="sayi">${UA.tl(h.tutar)}</td>${portal ? '' : `<td>${salt ? '' : `<button class="link" data-eylem="hareket-sil" data-id="${esc(id)}" data-h="${esc(h.id)}">Sil</button>`}</td>`}</tr>`).join('')}</tbody></table></div>` : bos('Kayıt yok.')}
+      ${!portal ? onayBekleyenHtml(id) : ''}
+      ${salt ? '<p class="kucuk soluk ust-bosluk">Bu dosyanın hesabını görme yetkiniz var, değiştirme yetkiniz yok.</p>' : ''}
+      ${portal || salt ? '' : `<form class="form" data-form="hareket" data-id="${esc(id)}">
         <label>Tür<select name="tur" id="htur-${esc(id)}"><option value="gider">Masraf</option><option value="avans">Avans alındı</option><option value="tahsilat">Masraf tahsilatı</option><option value="iade">Avans iadesi</option></select></label>
         <label>Kategori<select name="kategori" id="hkat-${esc(id)}">${UA.KATEGORI.map((k) => `<option ${k === 'Noter / resmî kurum' ? 'selected' : ''}>${k}</option>`).join('')}</select></label>
         <label>Tarih<input type="date" name="tarih" id="htar-${esc(id)}" required value="${UA.iso(new Date())}"></label>
         <label>Tutar (TL)<input type="number" name="tutar" id="htut-${esc(id)}" step="0.01" min="0" required class="orta"></label>
         <label class="genis">Açıklama<input name="aciklama" id="hack-${esc(id)}" required placeholder="ör. Noter — ihtarname"></label>
-        <label>Ödeyen<input name="odeyen" id="hode-${esc(id)}" list="buro-kisileri" value="${esc(D.elle.ayarlar?.avukatAdi || '')}" class="orta"></label>
+        <label>Ödeyen<input name="odeyen" id="hode-${esc(id)}" list="buro-kisileri" value="${esc(buroVar() ? ben()?.ad || '' : D.elle.ayarlar?.avukatAdi || '')}" class="orta"></label>
         <label>Ödeme yöntemi<select name="odemeYontemi" id="hyon-${esc(id)}"><option>Kredi kartı</option><option>Havale</option><option>Nakit</option></select></label>
         <label class="secim"><input type="checkbox" name="yansit" id="hyan-${esc(id)}" checked> Müvekkile yansıt</label>
         <label>Dekont / makbuz<input type="file" name="belge" id="hbel-${esc(id)}" accept=".pdf,.jpg,.jpeg,.png"></label>
@@ -607,6 +647,38 @@ Köşeli parantezli etiketler gizlenmiş adlardır; aynen kullan. Emin olmadığ
       </form>`}
     </div>`;
     return ozetHtml + uyapHtml + redHtml + harHtml;
+  }
+
+  // Yönetici onayı bekleyen masraflar (stajyer ve sekreterin eşik üstü girişleri)
+  function onayBekleyenHtml(id) {
+    if (!buroVar()) return '';
+    const l = (D.elle.buro.onaylar || []).filter((o) => o.dosyaId === id && o.durum === 'bekliyor');
+    if (!l.length) return '';
+    return `<div class="kontrol erken ust-bosluk"><b>Yönetici onayı bekleyen ${l.length} masraf</b> (onaylanınca hesaba girer):<ul class="duz">${l.map((o) => `<li>${esc(o.hareket.aciklama)}: <b>${UA.tl(o.hareket.tutar)}</b> · ${esc(kulAd(o.isteyenId))}, ${zamanOnce(o.zaman)}${yonetici() ? ` <button class="link" data-eylem="onay-ver" data-id="${esc(o.id)}">Onayla</button> · <button class="link" data-eylem="onay-red" data-id="${esc(o.id)}">Reddet</button>` : ''}</li>`).join('')}</ul></div>`;
+  }
+
+  // Dosyanın ekibi: sorumlu avukat, ekip, gizlilik, UYAP'ta vekil olanlar ve görevler
+  function ekipBlok(id) {
+    const e = dosyaElle(id), me = ben(), sorumlu = e.sorumluId === me?.id;
+    const atar = yonetici(), duzenler = atar || sorumlu;
+    const avukatlar = kullanicilar().filter((k) => ['ortak', 'avukat'].includes(k.rol));
+    const eklenebilir = kullanicilar().filter((k) => k.id !== e.sorumluId && !(e.ekip || []).includes(k.id) && k.rol !== 'muhasebe');
+    const isler = (D.elle.isler || []).filter((i) => i.dosyaId === id);
+    return `<div class="blok"><h2>Ekip ve erişim</h2>
+      <div class="ozet-satir"><span>Sorumlu avukat</span>${atar ? `<select data-eylem="sorumlu-sec" data-id="${esc(id)}" aria-label="Sorumlu avukat">${avukatlar.map((k) => `<option value="${esc(k.id)}" ${k.id === e.sorumluId ? 'selected' : ''}>${esc(k.ad)}</option>`).join('')}</select>` : `<b>${esc(kulAd(e.sorumluId))}</b>`}</div>
+      <div class="ozet-satir"><span>Ekip</span><span class="yan">${(e.ekip || []).map((x) => `<span class="cip sabit">${esc(kulAd(x))}${duzenler ? ` <button class="link" data-eylem="ekip-cikar" data-id="${esc(id)}" data-k="${esc(x)}" aria-label="Ekipten çıkar">×</button>` : ''}</span>`).join('') || '<span class="soluk">—</span>'}
+        ${duzenler && eklenebilir.length ? `<select data-eylem="ekip-ekle" data-id="${esc(id)}" aria-label="Ekibe ekle"><option value="">+ Ekibe ekle</option>${eklenebilir.map((k) => `<option value="${esc(k.id)}">${esc(k.ad)} (${esc(UA.buro.ROLLER[k.rol].ad)})</option>`).join('')}</select>` : ''}</span></div>
+      <div class="ozet-satir"><span>Gizli dosya<span class="kucuk soluk blok-satir">Yalnız sorumlu avukat, ekip ve yönetici görür; açılışlar kayda geçer.</span></span>${duzenler ? `<label class="anahtar"><input type="checkbox" data-eylem="gizli" data-id="${esc(id)}" ${e.gizli ? 'checked' : ''}> Gizli</label>` : `<span>${e.gizli ? '<span class="rozet r-kirmizi">Gizli</span>' : 'Hayır'}</span>`}</div>
+      <div class="ozet-satir"><span>UYAP'ta vekil olan<span class="kucuk soluk blok-satir">Dosya bu avukatların kendi UYAP okumasından geldi${(e.kaynaklar || []).length > 1 ? '; tek kayıtta birleşti' : ''}.</span></span><span>${(e.kaynaklar || []).map((x) => esc(kulAd(x))).join(', ') || '—'}</span></div>
+      <h3>Görevler</h3>
+      ${isler.length ? `<ul class="liste">${isler.map((i) => `<li><input type="checkbox" data-eylem="is-bitti" data-id="${esc(i.id)}" ${i.bitti ? 'checked disabled' : ''} aria-label="Tamamlandı"><div class="ana"><div ${i.bitti ? 'class="soluk"' : ''}>${esc(i.is)}</div><div class="kucuk soluk">${esc(kulAd(i.atananId))}${i.son ? ' · son: ' + UA.trTarih(i.son) : ''}${i.atayanId && i.atayanId !== i.atananId ? ' · veren: ' + esc(ilkAd(kulAd(i.atayanId))) : ''}</div></div></li>`).join('')}</ul>` : bos('Bu dosyada görev yok.')}
+      ${duzenler || UA.buro.ekipte(me, e) ? `<form class="form" data-form="gorev" data-id="${esc(id)}">
+        <label class="genis">Görev<input name="is" id="gv-is-${esc(id)}" required placeholder="ör. Bilirkişi raporuna itiraz taslağı"></label>
+        <label>Kime<select name="kime" id="gv-kime-${esc(id)}">${[e.sorumluId, ...(e.ekip || [])].filter(Boolean).map((x) => `<option value="${esc(x)}" ${x === me?.id ? 'selected' : ''}>${esc(kulAd(x))}</option>`).join('')}</select></label>
+        <label>Son gün<input type="date" name="son" id="gv-son-${esc(id)}"></label>
+        <span class="form-son"><button class="dugme">Görev ver</button></span>
+      </form>` : ''}
+    </div>`;
   }
 
   // ---------- dosya çekmecesi ----------
@@ -619,12 +691,14 @@ Köşeli parantezli etiketler gizlenmiş adlardır; aynen kullan. Emin olmadığ
       <h1>${esc(d.dosyaNo || '')}</h1><div class="soluk">${esc(d.birimAdi || '')} · ${esc(d.dosyaTur || '')} · ${esc(d.dosyaDurum || '')}</div>
       <div class="cekmece-ust">
         ${e.muvekkilId || e.muvekkil ? `<button class="cip" data-eylem="muvekkil" data-id="${esc(e.muvekkilId || 'ad:' + e.muvekkil)}">Müvekkil: ${esc(e.muvekkil)}</button>` : ''}
-        <label class="anahtar"><input type="checkbox" data-eylem="paylas" data-id="${esc(id)}" ${e.paylas ? 'checked' : ''}> Müvekkil portalında paylaş</label>
-        <form class="yan" data-form="sorumlu" data-id="${esc(id)}"><label>Sorumlu avukat<input name="sorumlu" id="sor-${esc(id)}" list="buro-kisileri" value="${esc(e.sorumlu || '')}" class="orta" placeholder="${esc(D.elle.ayarlar?.avukatAdi || '')}"></label><button class="ikincil">Kaydet</button></form>
+        ${yazar('dosya', id) ? `<label class="anahtar"><input type="checkbox" data-eylem="paylas" data-id="${esc(id)}" ${e.paylas ? 'checked' : ''}> Müvekkil portalında paylaş</label>` : ''}
+        ${buroVar() ? '' : `<form class="yan" data-form="sorumlu" data-id="${esc(id)}"><label>Sorumlu avukat<input name="sorumlu" id="sor-${esc(id)}" list="buro-kisileri" value="${esc(e.sorumlu || '')}" class="orta" placeholder="${esc(D.elle.ayarlar?.avukatAdi || '')}"></label><button class="ikincil">Kaydet</button></form>`}
+        ${e.gizli && buroVar() ? '<span class="rozet r-kirmizi">Gizli dosya</span>' : ''}
       </div>
+      ${buroVar() ? ekipBlok(id) : ''}
       <datalist id="buro-kisileri">${[D.elle.ayarlar?.avukatAdi, ...(D.elle.ayarlar?.buro || [])].filter(Boolean).map((x) => `<option value="${esc(x)}">`).join('')}</datalist>
       <div class="blok"><h2>Taraflar</h2>${taraf.some((t) => /\*{2,}/.test(t.adi || '')) ? '<div class="kucuk soluk alt-bosluk">Yıldızlı adları UYAP böyle gönderiyor (kişi adlarını bu dosyada gizliyor); asistan açamaz.</div>' : ''}${taraf.length ? `<ul class="liste">${taraf.map((t) => `<li><div class="ana"><b>${esc(t.adi)}</b> <span class="soluk">${esc(t.rol || '')}</span>${t.vekil ? `<div class="kucuk soluk">Vekil: ${esc(t.vekil)}</div>` : ''}</div>
-          ${UA.normal(e.muvekkil) === UA.normal(t.adi) ? '<span class="rozet r-yesil">Müvekkil</span>' : `<button class="link" data-eylem="muvekkil-sec" data-id="${esc(id)}" data-ad="${esc(t.adi)}">Müvekkil olarak işaretle</button>`}</li>`).join('')}</ul>`
+          ${UA.normal(e.muvekkil) === UA.normal(t.adi) ? '<span class="rozet r-yesil">Müvekkil</span>' : yazar('dosya', id) ? `<button class="link" data-eylem="muvekkil-sec" data-id="${esc(id)}" data-ad="${esc(t.adi)}">Müvekkil olarak işaretle</button>` : ''}</li>`).join('')}</ul>`
         : bos('UYAP\'ta bu dosyanın Taraflar sekmesini bir kez açın.')}</div>
       ${d.icra ? `<div class="blok"><h2>İcra özeti</h2>
         <div class="ozet-satir"><span>Takip</span><span>${esc(d.icra.takibinTuru || '')} · ${esc(d.icra.takibinYolu || '')}</span></div>
@@ -998,9 +1072,190 @@ Kurallar:
   }
 
   // ---------- çizim ----------
-  const SAYFALAR = { ozet, sorgu: sorguSayfa, durusma: durusmaSayfa, evrak: evrakSayfa, muvekkil: muvekkilSayfa, dosya: dosyaSayfa, para: paraSayfa, gorusme: gorusmeSayfa, dilekce: dilekceSayfa, hatirlatma: hatirlatmaSayfa };
+  // ---------- büro: giriş, kullanıcı kutusu ----------
+  const avatar = (ad, kucuk) => `<span class="avatar${kucuk ? ' kucuk' : ''}" aria-hidden="true">${esc(ilkAd(ad).slice(0, 1))}</span>`;
+  function girisEkrani() {
+    const b = D.elle.buro, R = UA.buro.ROLLER;
+    return `<div class="giris"><div class="giris-kart">
+      <div class="marka"><span class="logo" aria-hidden="true">§</span><span>Urikem Legal</span></div>
+      <h1>${esc(b.ad)}</h1><p class="soluk">Büro hesabına giriş</p>
+      <div class="giris-form" aria-hidden="true">
+        <label class="dikey">E-posta<input disabled placeholder="ad@buro.com"></label>
+        <label class="dikey">Şifre<input type="password" disabled placeholder="••••••••"></label>
+        <div class="kucuk soluk">Ardından telefondaki doğrulama uygulamasından tek kullanımlık kod istenir.</div>
+      </div>
+      <h2>Demo: kim olarak gireceksiniz?</h2>
+      <p class="kucuk soluk alt-bosluk">Her kişi yalnız rolünün ve kendisine atanan dosyaların izin verdiği kadarını görür. Sağ üstten kişi değiştirip farkı görebilirsiniz.</p>
+      <div class="giris-kisiler">${kullanicilar().map((k) => { const n = Object.keys(UA.buro.kapsamla(D.tamDb, D.elle, b, k).dosyalar).length; return `
+        <button class="giris-kisi" data-eylem="giris" data-id="${esc(k.id)}">${avatar(k.ad)}
+          <span class="ana"><b>${esc(k.ad)}</b><span class="kucuk soluk blok-satir">${esc(R[k.rol].ad)} · ${esc(k.unvan || '')}</span><span class="kucuk blok-satir">${esc(R[k.rol].aciklama)}</span></span>
+          <span class="giris-sayi"><b>${n}</b><span class="kucuk soluk blok-satir">dosya</span></span>
+        </button>`; }).join('')}</div>
+    </div></div>`;
+  }
+  function kullaniciKutusu() {
+    const k = ben();
+    if (!k) return '';
+    return `<div class="kul-kutu"><button class="kul-dugme" data-eylem="kul-menu" aria-expanded="${D.kulMenu}" aria-haspopup="true">${avatar(k.ad, true)}<span class="kul-ad"><b>${esc(k.ad)}</b><span class="kucuk soluk blok-satir">${esc(UA.buro.ROLLER[k.rol].ad)}</span></span></button>
+      ${D.kulMenu ? `<div class="kul-menu"><div class="kucuk soluk">${esc(D.elle.buro.ad)} · demo: başka biri olarak görün</div>
+        ${kullanicilar().filter((x) => x.id !== k.id && x.durum !== 'davet').map((x) => `<button data-eylem="giris" data-id="${esc(x.id)}">${avatar(x.ad, true)}<span>${esc(x.ad)}<span class="kucuk soluk blok-satir">${esc(UA.buro.ROLLER[x.rol].ad)}</span></span></button>`).join('')}
+        <button data-eylem="cikis" class="cikis">Çıkış yap</button></div>` : ''}</div>`;
+  }
+
+  // ---------- başvurular (CRM) ----------
+  const ASAMALAR = [['yeni', 'Yeni başvuru'], ['gorusme', 'Görüşme yapıldı'], ['teklif', 'Ücret teklifi verildi'], ['kazanildi', 'Vekâlet alındı'], ['kaybedildi', 'Olmadı']];
+  const karsiListe = (s) => String(s || '').split(/[,;\n]+/).map((x) => x.trim()).filter(Boolean);
+  const kontrolEt = (ad, karsi) => UA.buro.basvuruKontrol(D.tamDb, D.elle, ad, karsi || []);
+  function kontrolHtml(k) {
+    const n = Object.keys(D.tamDb.dosyalar).length;
+    if (k.durum === 'temiz') return `<div class="kontrol uyumlu"><b>Çıkar çatışması görünmüyor.</b> Ad ve karşı taraf büronun ${n} dosyasının bütün taraflarında arandı.</div>`;
+    const satir = (r) => {
+      const yer = D.db.dosyalar[r.dosyaId] ? `<button class="link" data-eylem="dosya" data-id="${esc(r.dosyaId)}">${esc(kisaBirim(r.birim))} ${esc(r.dosyaNo)}</button>` : 'yetkiniz dışındaki bir dosyada';
+      const sor = `sorumlu: ${esc(kulAd(r.sorumluId))}`;
+      if (r.kim === 'basvuran') return r.muvekkil ? `<li><b>${esc(r.taraf)}</b> zaten büronun müvekkili (${yer}).</li>` : `<li>Başvuran <b>${esc(r.taraf)}</b>, büroda ${yer} <b>karşı taraf</b> (${esc(r.rol || '')}); ${sor}.</li>`;
+      return r.muvekkil ? `<li>Başvurunun karşı tarafı <b>${esc(r.taraf)}</b>, büronun <b>müvekkili</b> (${yer}; ${sor}).</li>` : `<li>Karşı taraf <b>${esc(r.taraf)}</b> büroda başka bir dosyada da karşı taraf (${yer}).</li>`;
+    };
+    return `<div class="kontrol ${k.durum === 'catisma' ? 'gec' : 'erken'}"><b>${k.durum === 'catisma' ? 'Çıkar çatışması olabilir.' : 'Bilgi: büroda eşleşme var.'}</b><ul class="duz">${k.satirlar.map(satir).join('')}</ul>${k.durum === 'catisma' ? '<div class="kucuk">Vekâleti kabul etmeden önce sorumlu avukat ve yönetici ortakla değerlendirin. Büronun bütün dosyalarında arandı; sizin göremedikleriniz dahil.</div>' : ''}</div>`;
+  }
+  function basvuruKart(b) {
+    const k = kontrolEt(b.ad, b.karsi), bitti = ['kazanildi', 'kaybedildi'].includes(b.asama);
+    return `<button class="bv-kart ${k.durum === 'catisma' && !bitti ? 'catisma' : ''}" data-eylem="basvuru-ac" data-id="${esc(b.id)}">
+      <b>${esc(b.ad)}</b><span class="kucuk soluk">${esc(b.konu)}</span>
+      <span class="kucuk soluk">${UA.trTarih(UA.tarihCoz(b.tarih))} · ${esc(b.kaynak || '')}</span>
+      <span>${bitti ? '' : k.durum === 'catisma' ? `<span class="rozet r-kirmizi">${b.catismaOnay ? 'Çatışma değerlendirildi' : 'Çıkar çatışması'}</span>` : k.durum === 'bilgi' ? '<span class="rozet r-teb">Büroda eşleşme</span>' : '<span class="rozet r-yesil">Çatışma yok</span>'}${b.teklif ? `<span class="rozet r-gri">${UA.tl(b.teklif)}</span>` : ''}</span>
+      <span class="kucuk">${b.atananId ? esc(kulAd(b.atananId)) : '<span class="soluk">Avukat atanmadı</span>'}</span>
+    </button>`;
+  }
+  function basvuruCekmece(id) {
+    const b = (D.elle.buro?.basvurular || []).find((x) => x.id === id);
+    if (!b) return '';
+    const k = kontrolEt(b.ad, b.karsi), i = ASAMALAR.findIndex((a) => a[0] === b.asama);
+    const yaz = yonetici() || sev('muvekkil') === 'tam' || (sev('muvekkil') === 'kendi' && b.atananId === ben()?.id);
+    const engel = k.durum === 'catisma' && !b.catismaOnay;
+    const satir = (a, v) => (v ? `<div class="ozet-satir"><span class="soluk">${a}</span><span>${v}</span></div>` : '');
+    return `<div class="cekmece" role="dialog" aria-label="Başvuru"><button class="ikincil kapat" data-eylem="kapat">Kapat</button>
+      <h1>${esc(b.ad)}</h1><div class="soluk alt-bosluk">${esc(b.tur || '')} · ${esc(b.konu)} · <b>${esc(ASAMALAR[i]?.[1] || '')}</b></div>
+      <div class="blok"><h2>Çıkar çatışması kontrolü</h2>${kontrolHtml(k)}</div>
+      <div class="blok"><h2>Başvuru</h2>
+        ${satir('Karşı taraf', (b.karsi || []).map(esc).join(', ') || '—')}${satir('Nereden geldi', esc(b.kaynak || ''))}${satir('Tarih', UA.trTarih(UA.tarihCoz(b.tarih)))}
+        ${satir('Telefon', b.telefon ? `<span class="secilebilir">${esc(b.telefon)}</span>` : '')}${satir('Ücret teklifi', b.teklif ? UA.tl(b.teklif) : '')}${satir('Not', esc(b.not || ''))}${satir('Neden olmadı', esc(b.neden || ''))}
+        ${satir('Çatışma değerlendirmesi', b.catismaOnay ? `${esc(kulAd(b.catismaOnay.kimId))}, ${UA.trTarih(b.catismaOnay.zaman)}` : '')}
+        ${satir('Dosya', b.dosyaId && D.db.dosyalar[b.dosyaId] ? `<button class="link" data-eylem="dosya" data-id="${esc(b.dosyaId)}">${esc(dosyaAdi(b.dosyaId))}</button>` : '')}
+        <div class="ozet-satir"><span class="soluk">Avukat</span>${yonetici() && i < 3 ? `<select data-eylem="basvuru-ata" data-id="${esc(b.id)}" aria-label="Avukat ata"><option value="">Atanmadı</option>${kullanicilar().filter((x) => ['ortak', 'avukat'].includes(x.rol)).map((x) => `<option value="${esc(x.id)}" ${x.id === b.atananId ? 'selected' : ''}>${esc(x.ad)}</option>`).join('')}</select>` : `<span>${b.atananId ? esc(kulAd(b.atananId)) : '—'}</span>`}</div>
+      </div>
+      ${yaz ? `<div class="yan">
+        ${i >= 0 && i < 3 ? (engel ? `<span class="kucuk eksi">Çatışma değerlendirilmeden ilerletilemez.</span>${yonetici() ? `<button class="ikincil" data-eylem="catisma-onay" data-id="${esc(b.id)}">Değerlendirdim, devam edilebilir</button>` : ''}` : `<button class="dugme" data-eylem="basvuru-ileri" data-id="${esc(b.id)}">${esc(ASAMALAR[i + 1][1])} →</button>`)
+          + `<button class="ikincil" data-eylem="basvuru-olmadi" data-id="${esc(b.id)}">Olmadı</button>` : ''}
+        ${b.asama === 'kazanildi' && !Object.values(D.elle.muvekkiller).some((m) => UA.normal(m.ad) === UA.normal(b.ad)) ? `<button class="dugme" data-eylem="basvuru-muvekkil" data-id="${esc(b.id)}">Müvekkil kartı aç</button>` : ''}
+      </div>` : ''}
+    </div>`;
+  }
+  function basvuruSayfa() {
+    const l = (D.elle.buro.basvurular || []).filter((b) => sev('muvekkil') !== 'kendi' || !b.atananId || b.atananId === ben()?.id);
+    return `<div class="baslik"><div><h1>Başvurular</h1><div class="soluk">Müvekkil adayları, ilk aramadan vekâlete kadar. Her başvuru büronun bütün dosyalarında (sizin göremedikleriniz dahil) çıkar çatışması için taranır.</div></div><button class="${D.basvuruForm ? 'ikincil' : 'dugme'}" data-eylem="basvuru-form">${D.basvuruForm ? 'Vazgeç' : 'Yeni başvuru'}</button></div>
+      ${D.basvuruForm ? `<form class="blok" data-form="basvuru"><h2>Yeni başvuru</h2>
+        <div class="form ust-yok">
+          <label>Ad soyad / unvan<input name="ad" id="bv-ad" required data-canli="bv" autocomplete="off"></label>
+          <label>Tür<select name="tur" id="bv-tur"><option>Kişi</option><option>Kurum</option></select></label>
+          <label class="genis">Karşı taraf(lar)<input name="karsi" id="bv-karsi" data-canli="bv" placeholder="Virgülle ayırın" autocomplete="off"></label>
+          <label class="genis">Konu<input name="konu" id="bv-konu" required placeholder="ör. Kira tespit davası"></label>
+          <label>Nereden geldi<select name="kaynak" id="bv-kaynak"><option>Telefon</option><option>Web sitesi formu</option><option>Müvekkil tavsiyesi</option><option>Baro / meslektaş</option><option>Diğer</option></select></label>
+          <label>Telefon<input name="telefon" id="bv-tel"></label>
+        </div>
+        <div id="bv-kontrol" class="ust-bosluk"><div class="kucuk soluk">Adı ve karşı tarafı yazdıkça büronun dosyalarında çıkar çatışması aranır.</div></div>
+        <div class="form-son ust-bosluk"><button class="dugme">Başvuruyu kaydet</button></div>
+      </form>` : ''}
+      <div class="kanban">${ASAMALAR.map(([k, ad]) => { const x = l.filter((b) => b.asama === k); return `<section class="kolon" aria-label="${esc(ad)}"><h2>${esc(ad)} <span class="soluk">${x.length}</span></h2>${x.map(basvuruKart).join('') || '<p class="bos kucuk">Yok</p>'}</section>`; }).join('')}</div>`;
+  }
+
+  // ---------- büro yönetimi ----------
+  const buroSekmeleri = () => [['ekip', 'Ekip'], ...(yonetici() ? [['yetki', 'Roller ve yetkiler'], ['onay', 'Onaylar']] : []), ...(sev('gecmis') !== 'yok' ? [['gecmis', 'Kayıt geçmişi']] : []), ['guvenlik', 'Veri güvenliği']];
+  function buroSayfa() {
+    const sek = buroSekmeleri(), s = sek.some((x) => x[0] === D.buroSekme) ? D.buroSekme : 'ekip';
+    const bek = (D.elle.buro.onaylar || []).filter((o) => o.durum === 'bekliyor').length;
+    return `<div class="baslik"><div><h1>${esc(D.elle.buro.ad)}</h1><div class="soluk">${kullanicilar().length} kullanıcı · ${Object.keys(D.tamDb.dosyalar).length} dosya · ${(D.elle.buro.kullanicilar || []).filter((k) => k.uyap).length} avukat kendi UYAP'ını bağladı</div></div></div>
+      <div class="sekmeler" role="tablist">${sek.map(([k, ad]) => `<button role="tab" data-eylem="buro-sekme" data-id="${k}" aria-selected="${s === k}">${esc(ad)}${k === 'onay' && bek ? ` <span class="sayac">${bek}</span>` : ''}</button>`).join('')}</div>
+      ${{ ekip: buroEkip, yetki: buroYetki, onay: buroOnay, gecmis: buroGecmis, guvenlik: buroGuvenlik }[s]()}`;
+  }
+  function buroEkip() {
+    const tum = D.tamDb, el = D.elle.dosyalar, y = yonetici(), R = UA.buro.ROLLER;
+    const yakin = Object.values(tum.durusmalar).filter((d) => d.tarihSaat && gunFarki(d.tarihSaat) >= 0 && gunFarki(d.tarihSaat) <= 7);
+    const ortak = Object.keys(tum.dosyalar).filter((id) => (el[id]?.kaynaklar || []).length > 1).length;
+    const satir = (k) => {
+      const sor = Object.keys(tum.dosyalar).filter((id) => el[id]?.sorumluId === k.id);
+      const ekip = Object.keys(tum.dosyalar).filter((id) => (el[id]?.ekip || []).includes(k.id));
+      const gorev = (D.elle.isler || []).filter((i) => !i.bitti && i.atananId === k.id).length;
+      const dr = yakin.filter((d) => UA.buro.ekipte(k, el[d.dosyaId])).length;
+      return `<tr><td><div class="yan kisi">${avatar(k.ad, true)}<span><b>${esc(k.ad)}</b>${k.id === ben()?.id ? ' <span class="rozet r-yeni">Siz</span>' : ''}${k.durum === 'davet' ? ' <span class="rozet r-teb">Davet gönderildi</span>' : ''}<span class="kucuk soluk blok-satir">${esc(k.unvan || '')}${k.eposta ? ' · ' + esc(k.eposta) : ''}</span></span></div></td>
+        <td>${y && k.rol !== 'ortak' && k.id !== ben()?.id ? `<select data-eylem="rol-sec" data-id="${esc(k.id)}" aria-label="${esc(k.ad)} rolü">${Object.entries(R).filter(([r]) => r !== 'ortak').map(([r, v]) => `<option value="${r}" ${r === k.rol ? 'selected' : ''}>${esc(v.ad)}</option>`).join('')}</select>` : esc(R[k.rol].ad)}</td>
+        <td class="kucuk">${k.uyap ? `Kendi e-imzasıyla · ${zamanOnce(k.uyap.son)}<span class="soluk blok-satir">${k.uyap.dosya} dosya getirdi</span>` : `<span class="soluk">${k.durum === 'davet' ? 'Eklentiyi kurunca bağlanır' : k.rol === 'stajyer' ? 'Vekâleti yok; dosyaları atamayla görür' : 'UYAP kullanmıyor'}</span>`}</td>
+        <td class="sayi">${sor.length}</td><td class="sayi">${ekip.length}</td><td class="sayi">${gorev}</td><td class="sayi">${dr}</td>
+        <td>${y && sor.length ? `<button class="ikincil kucuk" data-eylem="devir-ac" data-id="${esc(k.id)}">Dosyalarını devret</button>` : ''}</td></tr>`;
+    };
+    const pasif = (D.elle.buro.kullanicilar || []).filter((k) => k.durum === 'pasif');
+    return `<div class="akis">
+        <div><span class="akis-no">1</span><b>Herkes kendi UYAP'ını okur</b><span class="kucuk soluk blok-satir">Her avukat kendi e-imzasıyla girer; e-imza ve şifre paylaşılmaz. Eklenti yalnız okur, UYAP'ı yormamak için sorguları tek tek ve aralıklı yapar.</span></div>
+        <div><span class="akis-no">2</span><b>Dosyalar büroda birleşir</b><span class="kucuk soluk blok-satir">Aynı dosya iki avukatın UYAP'ından gelirse tek kayıt olur (şu an ${ortak} dosya ortak vekâletli). Sorumlu, başta dosyayı getiren avukattır; yönetici değiştirebilir.</span></div>
+        <div><span class="akis-no">3</span><b>Herkes yetkisi kadarını görür</b><span class="kucuk soluk blok-satir">Rol ve dosya ataması belirler. Arama ve yapay zekâ da bu sınırın dışına çıkmaz.</span></div>
+      </div>
+      <div class="tablo"><table><thead><tr><th>Kişi</th><th>Rol</th><th>UYAP bağlantısı</th><th class="sayi">Sorumlu</th><th class="sayi">Ekibinde</th><th class="sayi">Açık görev</th><th class="sayi">7 günde duruşma</th><th></th></tr></thead><tbody>${kullanicilar().map(satir).join('')}</tbody></table></div>
+      ${y ? `<form class="blok" data-form="davet"><h2>Kullanıcı davet et</h2><div class="form ust-yok">
+        <label>Ad soyad<input name="ad" id="dv-ad" required></label><label>E-posta<input type="email" name="eposta" id="dv-eposta" required></label>
+        <label>Rol<select name="rol" id="dv-rol">${Object.entries(R).filter(([r]) => r !== 'ortak').map(([r, v]) => `<option value="${r}">${esc(v.ad)}</option>`).join('')}</select></label>
+        <span class="form-son"><button class="dugme">Davet gönder</button></span></div>
+        <p class="kucuk soluk">Davet edilen kişi e-postadaki bağlantıyla şifresini ve iki adımlı doğrulamasını kurar. Avukatsa eklentiyi kurup kendi UYAP'ını bağlar.</p></form>` : ''}
+      ${pasif.length ? `<div class="blok"><h2>Ayrılanlar</h2><ul class="liste">${pasif.map((k) => `<li>${avatar(k.ad, true)}<div class="ana">${esc(k.ad)}<div class="kucuk soluk">${esc(R[k.rol].ad)} · hesap kapatıldı ${k.ayrilma ? UA.trTarih(k.ayrilma) : ''}</div></div></li>`).join('')}</ul></div>` : ''}`;
+  }
+  function buroYetki() {
+    const b = D.elle.buro, R = UA.buro.ROLLER, roller = Object.keys(R), y = yonetici();
+    return `<div class="blok"><h2>Roller ve yetkiler</h2><p class="kucuk soluk alt-bosluk">"Kendi dosyaları": kişinin sorumlu avukatı ya da ekibinde olduğu dosyalar. Gizli dosyaları yalnız sorumlu avukat, ekip ve yönetici görür. Yönetici ortağın yetkisi kısıtlanamaz.</p>
+      <div class="tablo"><table class="yetki"><thead><tr><th>Modül</th>${roller.map((r) => `<th>${esc(R[r].ad)}</th>`).join('')}</tr></thead><tbody>
+      ${UA.buro.MODULLER.map((m) => `<tr><td>${esc(m.ad)}</td>${roller.map((r) => { if (r === 'ortak') return '<td><span class="rozet r-yesil">Tam</span></td>'; const v = UA.buro.seviye(b, { rol: r }, m.k); return `<td><select data-eylem="yetki" data-rol="${r}" data-modul="${m.k}" class="sev sev-${v}" ${y ? '' : 'disabled'} aria-label="${esc(R[r].ad)}: ${esc(m.ad)}">${UA.buro.SEVIYELER.map((x) => `<option value="${x.k}" ${v === x.k ? 'selected' : ''}>${esc(x.ad)}</option>`).join('')}</select></td>`; }).join('')}</tr>`).join('')}
+      <tr><td>Eşik üstü masraf yönetici onayına düşer</td>${roller.map((r) => r === 'ortak' ? '<td><span class="soluk">—</span></td>' : `<td><input type="checkbox" data-eylem="onay-rol" data-rol="${r}" ${UA.buro.onayGerekir(b, { rol: r }) ? 'checked' : ''} ${y ? '' : 'disabled'} aria-label="${esc(R[r].ad)} onaya tabi"></td>`).join('')}</tr>
+      </tbody></table></div>
+      <form class="yan" data-form="esik"><label class="yan">Onay eşiği<input type="number" name="esik" id="esik" min="0" step="100" value="${esc(b.esik)}" class="orta" ${y ? '' : 'disabled'}> TL</label>${y ? '<button class="ikincil">Kaydet</button>' : ''}</form></div>
+      <div class="blok"><h2>Kim hangi rolde</h2><ul class="liste">${roller.map((r) => `<li><div class="ana"><b>${esc(R[r].ad)}</b><div class="kucuk soluk">${esc(R[r].aciklama)}</div></div><span class="kucuk">${kullanicilar().filter((k) => k.rol === r).map((k) => esc(k.ad)).join(', ') || '<span class="soluk">—</span>'}</span></li>`).join('')}</ul></div>`;
+  }
+  function buroOnay() {
+    const l = D.elle.buro.onaylar || [], bek = l.filter((o) => o.durum === 'bekliyor'), biten = l.filter((o) => o.durum !== 'bekliyor').slice(-10).reverse();
+    const satir = (o) => `<li><div class="tarih">${UA.tl(o.hareket.tutar)}</div><div class="ana"><b>${esc(o.hareket.aciklama)}</b><div class="kucuk soluk">${D.db.dosyalar[o.dosyaId] ? `<button class="link" data-eylem="dosya" data-id="${esc(o.dosyaId)}">${esc(dosyaAdi(o.dosyaId))}</button>` : ''} · ${esc(D.elle.dosyalar[o.dosyaId]?.muvekkil || '')} · giren: ${esc(kulAd(o.isteyenId))}, ${zamanOnce(o.zaman)} · ${o.hareket.belge ? '📎 ' + esc(o.hareket.belge.ad) : '<span class="eksi">belge eklenmemiş</span>'}</div>${o.karar ? `<div class="kucuk">${o.durum === 'onaylandi' ? 'Onaylayan' : 'Reddeden'}: ${esc(kulAd(o.karar.kimId))}, ${zamanOnce(o.karar.zaman)}</div>` : ''}</div>
+      ${o.durum === 'bekliyor' ? `<div class="satir-dugmeler"><button class="dugme kucuk" data-eylem="onay-ver" data-id="${esc(o.id)}">Onayla</button><button class="ikincil kucuk" data-eylem="onay-red" data-id="${esc(o.id)}">Reddet</button></div>` : `<span class="rozet ${o.durum === 'onaylandi' ? 'r-yesil' : 'r-kirmizi'}">${o.durum === 'onaylandi' ? 'Onaylandı' : 'Reddedildi'}</span>`}</li>`;
+    return `<div class="blok"><h2>Onay bekleyen masraflar (${bek.length})</h2><p class="kucuk soluk alt-bosluk">Onaya tabi rollerin girdiği ${UA.tl(D.elle.buro.esik)} üstü masraflar, onaylanana kadar müvekkil hesabına girmez. Eşiği ve kimlerin onaya tabi olduğunu "Roller ve yetkiler"den değiştirebilirsiniz.</p>${bek.length ? `<ul class="liste">${bek.map(satir).join('')}</ul>` : bos('Onay bekleyen masraf yok.')}</div>
+      ${biten.length ? `<div class="blok"><h2>Son kararlar</h2><ul class="liste">${biten.map(satir).join('')}</ul></div>` : ''}`;
+  }
+  function buroGecmis() {
+    const tum = sev('gecmis') === 'tam';
+    let l = (D.elle.gecmis || []).slice().reverse();
+    if (!tum) l = l.filter((x) => x.kim === ben()?.ad || (x.dosyaId && D.db.dosyalar[x.dosyaId]));
+    const kisiler = [...new Set(l.map((x) => x.kim).filter(Boolean))];
+    if (D.gecmisKim) l = l.filter((x) => x.kim === D.gecmisKim);
+    return `<div class="blok"><div class="baslik kucuk-baslik"><div><h2>Kayıt geçmişi</h2><div class="kucuk soluk">${tum ? 'Büronun bütün işlemleri.' : 'Sizin işlemleriniz ve görebildiğiniz dosyalardaki işlemler.'} Kayıtlar düzenlenemez ve silinemez.</div></div>
+      <select data-eylem="gecmis-kim" aria-label="Kişiye göre"><option value="">Herkes</option>${kisiler.map((k) => `<option ${k === D.gecmisKim ? 'selected' : ''}>${esc(k)}</option>`).join('')}</select></div>
+      <div class="tablo"><table><thead><tr><th>Zaman</th><th>Kişi</th><th>Dosya</th><th>İşlem</th></tr></thead><tbody>${l.slice(0, 100).map((x) => `<tr><td class="kucuk">${UA.trTarih(x.zaman)} ${UA.trSaat(x.zaman)}</td><td>${esc(x.kim || '')}</td><td class="kucuk">${x.dosyaId ? (D.db.dosyalar[x.dosyaId] ? `<button class="link" data-eylem="dosya" data-id="${esc(x.dosyaId)}">${esc(dosyaAdi(x.dosyaId))}</button>` : '<span class="soluk">yetkiniz dışında</span>') : '<span class="soluk">—</span>'}</td><td>${esc(x.ne)}</td></tr>`).join('') || '<tr><td colspan="4" class="soluk">Kayıt yok.</td></tr>'}</tbody></table></div></div>`;
+  }
+  function buroGuvenlik() {
+    const k = (b, m) => `<div class="kart guv"><b>${b}</b><div class="kucuk soluk">${m}</div></div>`;
+    return `<div class="guv-izgara">
+      ${k('UYAP şifresi ve e-imza paylaşılmaz', 'Her avukat UYAP\'a kendi e-imzasıyla girer. Eklenti yalnız okur; UYAP\'ta gönderme, kaydetme, ödeme gibi hiçbir işlem yapmaz. UYAP\'ı yormamak için sorgular tek tek ve en az 1,5 saniye arayla yapılır; UYAP güvenlik doğrulaması isterse okuma durur.')}
+      ${k('Veriler Türkiye\'de', 'Büro hesabının sunucusu Türkiye\'deki bir veri merkezinde durur; kişisel veri yurt dışına aktarılmaz.')}
+      ${k('Uçtan uca şifreli', 'Veriler büronun anahtarıyla tarayıcıda şifrelenip sunucuya öyle gider. Sunucuda, Urikem dahil, kimse dosya içeriğini okuyamaz. Hesaplar, arama ve süzme tarayıcıda yapılır.')}
+      ${k('Yapay zekâya yalnız anonim metin', 'Ad, TC kimlik, telefon, IBAN, adres ve dosya numaraları gönderilmeden önce maskelenir; avukat gidecek metni görüp onaylar. Yapay zekâ, kullanıcının yetkisi dışındaki dosyaları hiç görmez.')}
+      ${k('Rol ve dosya bazında yetki', 'Kim hangi dosyayı görür, kim masraf girer, kim onaylar: rol ve dosya ataması belirler. Gizli dosyalar yalnız sorumlu, ekip ve yöneticiye açıktır.')}
+      ${k('Her işlem kayıt altında', 'Kim hangi dosyayı açtı, hangi masrafı girdi, kime ne atadı: kayıt geçmişinde tarih ve kişiyle durur, düzenlenemez.')}
+      ${k('Ayrılan çalışan', 'Tek ekranda dosyalarını devredip hesabını kapatırsınız; o kişinin cihazındaki büro verisi bir sonraki açılışta silinir.')}
+      ${k('İki adımlı giriş', 'Şifreye ek olarak telefondaki doğrulama uygulamasından kod istenir. Oturum, bir süre işlem yapılmazsa kendiliğinden kapanır.')}
+    </div><p class="kucuk soluk">Bu sayfa büro sürümünün tasarımını anlatır; demo sürümünde veriler yalnız bu tarayıcıda durur.</p>`;
+  }
+
+  const SAYFALAR = { ozet, sorgu: sorguSayfa, durusma: durusmaSayfa, evrak: evrakSayfa, muvekkil: muvekkilSayfa, dosya: dosyaSayfa, para: paraSayfa, gorusme: gorusmeSayfa, dilekce: dilekceSayfa, hatirlatma: hatirlatmaSayfa, basvuru: () => (buroVar() ? basvuruSayfa() : ''), buro: () => (buroVar() ? buroSayfa() : '') };
   function ciz() {
     nesil++;
+    const girisGerek = buroVar() && !ben();
+    document.body.dataset.giris = girisGerek ? '1' : '0';
+    const kk = $('#kullanici-kutu'); if (kk) kk.innerHTML = kullaniciKutusu();
+    const gizle = buroVar() && ben() ? { durusma: sev('dosya') === 'yok', evrak: sev('dosya') === 'yok', dosya: sev('dosya') === 'yok', muvekkil: sev('muvekkil') === 'yok', para: sev('para') === 'yok', dilekce: sev('dilekce') === 'yok', basvuru: !['kendi', 'tam'].includes(sev('muvekkil')) } : {};
+    document.querySelectorAll('.menu [data-sayfa]').forEach((b) => { b.hidden = ('buro' in b.dataset && !buroVar()) || !!gizle[b.dataset.sayfa]; });
+    if (gizle[D.sayfa] || (!buroVar() && ['basvuru', 'buro'].includes(D.sayfa))) D.sayfa = 'ozet';
     document.body.dataset.ekran = D.gorunum;
     document.querySelectorAll('[data-gorunum]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.gorunum === D.gorunum)));
     document.querySelectorAll('[data-mod]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mod === D.mod)));
@@ -1008,21 +1263,22 @@ Kurallar:
     const ust = $('#ust-sorgu'); if (ust && document.activeElement !== ust.querySelector('input')) ust.querySelector('input').value = D.sayfa === 'sorgu' ? D.sorgu : '';
     const bosVeri = !Object.keys(D.db.dosyalar).length && !Object.keys(D.db.durusmalar).length;
     $('#bant').innerHTML = D.mod === 'demo'
-      ? '<div class="bant demo"><b>Demo.</b> Bütün kişi, şirket, dosya numarası ve tutarlar uydurmadır. Gerçek kullanımda dosya, duruşma, evrak ve mahkeme masrafları UYAP\'tan kendiliğinden gelir.</div>'
+      ? '<div class="bant demo"><b>Demo' + (buroVar() ? ' büro hesabı' : '') + '.</b> Bütün kişi, şirket, dosya numarası ve tutarlar uydurmadır. Gerçek kullanımda dosya, duruşma, evrak ve mahkeme masrafları UYAP\'tan kendiliğinden gelir.</div>'
       : bosVeri ? '<div class="bant bilgi"><b>Henüz veri yok.</b> Özet sayfasındaki kurulum adımlarını izleyin.</div>'
       : '<div class="bant bilgi">Veriler yalnızca bu bilgisayarda. Asistan UYAP\'ta yalnızca okuma yapar; gönderme, kaydetme, ödeme gibi hiçbir işlem yapmaz.</div>';
     const yeniSay = okunmamis().length + suresizTebligat().length * 0, bitenSay = avansiBiten().length, gorSay = (D.elle.gorusmeler || []).filter((g) => g.durum === 'transkript').length;
     document.querySelectorAll('[data-sayfa]').forEach((b) => {
       b.setAttribute('aria-current', b.dataset.sayfa === D.sayfa ? 'page' : 'false');
-      const n = { evrak: yeniSay, para: bitenSay, gorusme: gorSay }[b.dataset.sayfa] || 0;
+      const n = { evrak: yeniSay, para: bitenSay, gorusme: gorSay, basvuru: buroVar() ? (D.elle.buro.basvurular || []).filter((x) => x.asama === 'yeni').length : 0, buro: buroVar() && yonetici() ? (D.elle.buro.onaylar || []).filter((x) => x.durum === 'bekliyor').length : 0 }[b.dataset.sayfa] || 0;
       const s = b.querySelector('.sayac'); if (s) { s.textContent = n; s.hidden = !n; }
     });
     const s = D.db.senkron;
     $('#senkron').innerHTML = `<b>UYAP'tan son okuma</b>${[['Dosyalar', s.dosyalar], ['Duruşmalar', s.durusmalar], ['Evrak', s.evraklar], ['Masraf', s.para]].map(([a, z]) => `<div><span>${a}</span><span>${zamanOnce(z)}</span></div>`).join('')}
       ${D.mod === 'demo' ? '<button class="ikincil" data-eylem="demo-sifirla">Demoyu baştan kur</button>' : D.onay === 'veri-sil' ? '<div class="onay">Bu bilgisayardaki bütün veriler silinsin mi? <button class="dugme tehlike" data-eylem="veri-sil-evet">Sil</button> <button class="ikincil" data-eylem="onay-iptal">Vazgeç</button></div>' : '<button class="ikincil" data-eylem="yedek-al">Yedek al</button><label class="ikincil yedek-yukle">Yedek yükle<input type="file" accept=".json" class="gizli" data-eylem="yedek-yukle"></label><button class="ikincil" data-eylem="veri-sil">Verileri bu bilgisayardan sil</button>'}`;
-    $('#icerik').innerHTML = D.gorunum === 'portal' ? portal() : SAYFALAR[D.sayfa]();
+    $('#icerik').innerHTML = girisGerek ? girisEkrani() : D.gorunum === 'portal' ? portal() : SAYFALAR[D.sayfa]();
     const k = $('#kaplama');
-    if (D.cekmece && D.gorunum === 'avukat') { k.hidden = false; k.className = 'kaplama sag'; k.innerHTML = D.cekmece.tur === 'muvekkil' ? muvekkilCekmece(D.cekmece.id) : dosyaCekmece(D.cekmece.id); }
+    if (girisGerek) { D.cekmece = null; D.modal = null; }
+    if (D.cekmece && D.gorunum === 'avukat') { k.hidden = false; k.className = 'kaplama sag'; k.innerHTML = D.cekmece.tur === 'muvekkil' ? muvekkilCekmece(D.cekmece.id) : D.cekmece.tur === 'basvuru' ? basvuruCekmece(D.cekmece.id) : dosyaCekmece(D.cekmece.id); }
     else if (D.modal) { k.hidden = false; k.className = 'kaplama orta'; k.innerHTML = modalCiz(); }
     else { k.hidden = true; k.innerHTML = ''; }
     const b = $('#bildirim'); b.hidden = !D.bildirim; b.textContent = D.bildirim;
@@ -1032,6 +1288,17 @@ Kurallar:
   function modalCiz() {
     const m = D.modal;
     if (m.tur === 'metin') return `<div class="modal" role="dialog" aria-label="${esc(m.baslik)}"><button class="ikincil kapat" data-eylem="kapat">Kapat</button><h2>${esc(m.baslik)}</h2><p class="kucuk soluk">Tarayıcı panoya kopyalamaya izin vermedi. Metni seçip kopyalayın (Cmd/Ctrl + C).</p><textarea readonly rows="14" id="kopya-alan">${esc(m.metin)}</textarea></div>`;
+    if (m.tur === 'devir') {
+      const k = UA.buro.kullanici(D.elle.buro, m.kimden), l = Object.keys(D.tamDb.dosyalar).filter((id) => D.elle.dosyalar[id]?.sorumluId === m.kimden);
+      return `<div class="modal" role="dialog" aria-label="Dosya devri"><button class="ikincil kapat" data-eylem="kapat">Kapat</button><h2>${esc(k.ad)}: dosya devri</h2>
+      <form data-form="devir" data-id="${esc(m.kimden)}" class="dikey-form">
+        <fieldset class="alt-bosluk"><legend>Devredilecek dosyalar (${l.length})</legend>${l.map((id) => `<label class="secim blok-satir"><input type="checkbox" name="d-${esc(id)}" checked> ${esc(dosyaAdi(id))} · ${esc(D.elle.dosyalar[id]?.muvekkil || '')}</label>`).join('')}</fieldset>
+        <label class="dikey">Yeni sorumlu avukat<select name="kime" id="dv-kime">${kullanicilar().filter((x) => x.id !== m.kimden && ['ortak', 'avukat'].includes(x.rol)).map((x) => `<option value="${esc(x.id)}">${esc(x.ad)}</option>`).join('')}</select></label>
+        <label class="secim"><input type="checkbox" name="ekipte" checked> ${esc(ilkAd(k.ad))} devirden sonra ekipte kalsın</label>
+        <label class="secim alt-bosluk"><input type="checkbox" name="pasif"> ${esc(ilkAd(k.ad))} bürodan ayrılıyor: hesabını kapat, açık görevlerini de devret</label>
+        <p class="kucuk soluk">UYAP'taki vekâlet değişikliği ayrıca yapılır; asistan UYAP'ta işlem yapmaz. Yeni avukat vekâlet alınca dosya onun UYAP okumasında da görünür.</p>
+        <button class="dugme">Devret</button></form></div>`;
+    }
     if (m.tur === 'yeni-muvekkil') return `<div class="modal" role="dialog" aria-label="Müvekkil ekle"><button class="ikincil kapat" data-eylem="kapat">Kapat</button><h2>Müvekkil ekle</h2>
       <form data-form="muvekkil-ekle" class="dikey-form"><label class="dikey">Ad soyad / unvan<input name="ad" id="m-ad" required></label><label class="dikey">Tür<select name="tur" id="m-tur"><option>Kişi</option><option>Kurum</option></select></label>
       <label class="dikey">Telefon<input name="telefon" id="m-tel"></label><label class="dikey">E-posta<input type="email" name="eposta" id="m-eposta"></label><button class="dugme">Kaydet</button></form></div>`;
@@ -1042,6 +1309,7 @@ Kurallar:
   const kapat = () => { D.cekmece = null; D.modal = null; };
   document.addEventListener('click', async (ev) => {
     if (ev.target.id === 'kaplama') { kapat(); return ciz(); }
+    if (D.kulMenu && !ev.target.closest('.kul-kutu')) { D.kulMenu = false; ciz(); }
     const t = ev.target.closest('[data-mod],[data-sayfa],[data-git],[data-filtre],[data-pfiltre],[data-eylem],[data-sor],[data-gorunum]');
     if (!t || t.tagName === 'SELECT' || (t.tagName === 'INPUT' && t.type !== 'button')) return;
     if (t.dataset.gorunum) { D.gorunum = t.dataset.gorunum; kapat(); window.scrollTo(0, 0); return ciz(); }
@@ -1052,9 +1320,38 @@ Kurallar:
     if (t.dataset.pfiltre) { D.paraFiltre = t.dataset.pfiltre; return ciz(); }
     const id = t.dataset.id;
     switch (t.dataset.eylem) {
-      case 'dosya': D.cekmece = { tur: 'dosya', id }; D.modal = null; ciz(); if (t.dataset.bolum === 'para') $('#bolum-para')?.scrollIntoView(); return;
+      case 'dosya': if (buroVar() && D.elle.dosyalar[id]?.gizli && !UA.buro.ekipte(ben(), D.elle.dosyalar[id])) { iz(id, 'Gizli dosya açıldı (yönetici erişimi)'); koy({ [anahtar().elle]: D.elle }); }
+        D.cekmece = { tur: 'dosya', id }; D.modal = null; ciz(); if (t.dataset.bolum === 'para') $('#bolum-para')?.scrollIntoView(); return;
       case 'muvekkil': D.cekmece = { tur: 'muvekkil', id }; D.modal = null; return ciz();
       case 'kapat': kapat(); return ciz();
+      case 'giris': { const k = UA.buro.kullanici(D.elle.buro, id); if (!k) return; D.kullaniciId = id; D.kulMenu = false; kapat(); D.sayfa = 'ozet'; D.dosyaSahip = 'hepsi'; D.sorguYz = null; await koy({ demoKullanici: id }); iz(null, 'Giriş yaptı'); window.scrollTo(0, 0); return kaydet(); }
+      case 'cikis': D.kullaniciId = null; D.kulMenu = false; kapat(); await koy({ demoKullanici: null }); kapsamUygula(); return ciz();
+      case 'kul-menu': D.kulMenu = !D.kulMenu; return ciz();
+      case 'buro-sekme': D.sayfa = 'buro'; D.buroSekme = id; D.gorunum = 'avukat'; kapat(); window.scrollTo(0, 0); return ciz();
+      case 'dosya-sahip': D.dosyaSahip = id; return ciz();
+      case 'devir-ac': D.modal = { tur: 'devir', kimden: id }; return ciz();
+      case 'onay-ver': case 'onay-red': {
+        if (!yonetici()) return;
+        const o = (D.elle.buro.onaylar || []).find((x) => x.id === id); if (!o || o.durum !== 'bekliyor') return;
+        o.karar = { kimId: ben().id, zaman: new Date().toISOString() };
+        if (t.dataset.eylem === 'onay-ver') { o.durum = 'onaylandi'; dosyaElle(o.dosyaId).hareketler.push({ ...o.hareket, id: o.hareket.id || 'h-' + Date.now(), onaylayan: ben().ad }); iz(o.dosyaId, `Masraf onaylandı: ${UA.tl(o.hareket.tutar)}, ${o.hareket.aciklama} (giren: ${kulAd(o.isteyenId)})`); bildir('Onaylandı; masraf müvekkil hesabına girdi.'); }
+        else { o.durum = 'reddedildi'; iz(o.dosyaId, `Masraf reddedildi: ${UA.tl(o.hareket.tutar)}, ${o.hareket.aciklama} (giren: ${kulAd(o.isteyenId)})`); bildir('Reddedildi; masraf hesaba girmedi.'); }
+        return kaydet();
+      }
+      case 'ekip-cikar': { const e = dosyaElle(id); e.ekip = (e.ekip || []).filter((x) => x !== t.dataset.k); iz(id, `Ekipten çıkarıldı: ${kulAd(t.dataset.k)}`); return kaydet(); }
+      case 'basvuru-form': D.basvuruForm = !D.basvuruForm; return ciz();
+      case 'basvuru-ac': D.cekmece = { tur: 'basvuru', id }; D.modal = null; return ciz();
+      case 'basvuru-ileri': case 'basvuru-olmadi': case 'catisma-onay': case 'basvuru-muvekkil': {
+        const b = (D.elle.buro.basvurular || []).find((x) => x.id === id); if (!b) return;
+        if (t.dataset.eylem === 'catisma-onay') { if (!yonetici()) return; b.catismaOnay = { kimId: ben().id, zaman: new Date().toISOString() }; iz(null, `Çıkar çatışması değerlendirildi, devam onayı verildi: ${b.ad}`); return kaydet(); }
+        if (t.dataset.eylem === 'basvuru-muvekkil') { const mid = 'm-' + Date.now(); D.elle.muvekkiller[mid] = { id: mid, ad: b.ad, tur: b.tur, telefon: b.telefon || '', kayit: UA.iso(new Date()) }; iz(null, `Başvurudan müvekkil kartı açıldı: ${b.ad}`); bildir('Müvekkil kartı açıldı. Dava açılınca dosya UYAP okumasıyla kendiliğinden gelir.'); return kaydet(); }
+        if (t.dataset.eylem === 'basvuru-ileri') {
+          if (kontrolEt(b.ad, b.karsi).durum === 'catisma' && !b.catismaOnay) return bildir('Çıkar çatışması değerlendirilmeden başvuru ilerletilemez.');
+          const i = ASAMALAR.findIndex((a) => a[0] === b.asama); if (i < 0 || i > 2) return; b.asama = ASAMALAR[i + 1][0];
+          if (!b.atananId && ben() && ['ortak', 'avukat'].includes(ben().rol)) b.atananId = ben().id;
+        } else { b.asama = 'kaybedildi'; }
+        iz(null, `Başvuru: ${b.ad} → ${ASAMALAR.find((a) => a[0] === b.asama)[1]}`); return kaydet();
+      }
       case 'yeni-muvekkil': D.modal = { tur: 'yeni-muvekkil' }; return ciz();
       case 'okundu': D.elle.okundu[id] = new Date().toISOString(); return kaydet();
       case 'sure-ac': D.acikSure = id; if (!D.cekmece) { D.sayfa = 'evrak'; D.evrakFiltre = 'teb'; } ciz(); document.getElementById('evrak-' + id)?.scrollIntoView({ block: 'center' }); return;
@@ -1152,6 +1449,17 @@ Kurallar:
     if (t.dataset.eylem === 'uyap-yansit') { const e = dosyaElle(id); e.uyapYansit = e.uyapYansit || {}; e.uyapYansit[t.dataset.kayit] = t.checked; iz(id, `UYAP masraf satırı ${t.checked ? 'müvekkile yansıtılacak' : 'büroda kalacak'}`); return kaydet(); }
     if (t.dataset.eylem === 'paylas') { dosyaElle(id).paylas = t.checked; iz(id, t.checked ? 'Dosya müvekkil portalında paylaşıldı' : 'Dosya portaldan kaldırıldı'); bildir(t.checked ? 'Dosya müvekkil portalında paylaşıldı.' : 'Dosya portaldan kaldırıldı.'); return kaydet(); }
     if (t.dataset.eylem === 'portal-muv') { D.portalMuv = t.value; return ciz(); }
+    if (buroVar()) {
+      const b = D.elle.buro;
+      if (t.dataset.eylem === 'sorumlu-sec' && yonetici()) { const e = dosyaElle(id), eski = e.sorumluId; e.sorumluId = t.value; e.sorumlu = kulAd(t.value); e.ekip = (e.ekip || []).filter((x) => x !== t.value); iz(id, `Sorumlu avukat değişti: ${kulAd(eski)} → ${kulAd(t.value)}`); bildir('Sorumlu avukat değişti.'); return kaydet(); }
+      if (t.dataset.eylem === 'ekip-ekle' && t.value) { const e = dosyaElle(id); e.ekip = [...new Set([...(e.ekip || []), t.value])]; iz(id, `Ekibe eklendi: ${kulAd(t.value)}`); bildir(`${kulAd(t.value)} ekibe eklendi; artık bu dosyayı görür.`); return kaydet(); }
+      if (t.dataset.eylem === 'gizli') { dosyaElle(id).gizli = t.checked; iz(id, t.checked ? 'Dosya gizli işaretlendi: yalnız sorumlu avukat, ekibi ve yönetici görür' : 'Gizlilik kaldırıldı'); bildir(t.checked ? 'Dosya gizlendi.' : 'Gizlilik kaldırıldı.'); return kaydet(); }
+      if (t.dataset.eylem === 'yetki' && yonetici()) { b.yetkiler = b.yetkiler || UA.buro.yetkilerBos(); b.yetkiler[t.dataset.rol][t.dataset.modul] = t.value; iz(null, `Yetki değişti: ${UA.buro.ROLLER[t.dataset.rol].ad} · ${UA.buro.MODULLER.find((m) => m.k === t.dataset.modul).ad} → ${UA.buro.SEVIYELER.find((x) => x.k === t.value).ad}`); return kaydet(); }
+      if (t.dataset.eylem === 'onay-rol' && yonetici()) { b.onayRolleri = { ...(b.onayRolleri || UA.buro.ONAY_VARSAYILAN), [t.dataset.rol]: t.checked }; iz(null, `${UA.buro.ROLLER[t.dataset.rol].ad}: eşik üstü masraf onayı ${t.checked ? 'açıldı' : 'kapatıldı'}`); return kaydet(); }
+      if (t.dataset.eylem === 'rol-sec' && yonetici()) { const k = UA.buro.kullanici(b, id); if (!k) return; const eski = k.rol; k.rol = t.value; iz(null, `${k.ad}: rol ${UA.buro.ROLLER[eski].ad} → ${UA.buro.ROLLER[t.value].ad}`); bildir('Rol değişti.'); return kaydet(); }
+      if (t.dataset.eylem === 'gecmis-kim') { D.gecmisKim = t.value; return ciz(); }
+      if (t.dataset.eylem === 'basvuru-ata') { const x = (b.basvurular || []).find((y) => y.id === id); if (x) { x.atananId = t.value || null; iz(null, `Başvuru ${x.ad}: avukat ${kulAd(t.value)}`); } return kaydet(); }
+    }
     if (t.dataset.eylem === 'anonim-onay') { D.anonimOnay = t.checked; return ciz(); }
     if (t.dataset.eylem === 'dl-onay') { if (D.dilekce) D.dilekce.onay = t.checked; return ciz(); }
     if (t.dataset.eylem === 'dl-duzenle') { if (D.dilekce) { D.dilekce.cevap = t.value; D.dilekce.atiflar = atifBul(t.value); } return; }
@@ -1189,6 +1497,13 @@ Kurallar:
         const h = { id: 'h-' + Date.now(), tur: v.tur, kategori: v.tur === 'gider' ? v.kategori : undefined, tarih: v.tarih, aciklama: v.aciklama.trim(), tutar: +v.tutar,
           odeyen: (v.odeyen || '').trim() || undefined, odemeYontemi: v.odemeYontemi, yansit: v.tur === 'gider' ? fd.get('yansit') === 'on' : undefined,
           belge: bid ? { id: bid, ad: belge.name, boyut: belge.size, tur: belge.type } : undefined };
+        if (!yazar('para', id)) return bildir('Bu dosyanın masraf hesabını değiştirme yetkiniz yok.');
+        if (buroVar() && h.tur === 'gider' && UA.buro.onayGerekir(D.elle.buro, ben()) && h.tutar > (+D.elle.buro.esik || 0)) {
+          (D.elle.buro.onaylar = D.elle.buro.onaylar || []).push({ id: 'o-' + Date.now(), dosyaId: id, isteyenId: ben().id, zaman: new Date().toISOString(), durum: 'bekliyor', hareket: h });
+          iz(id, `Eşik üstü masraf onaya gönderildi: ${UA.tl(h.tutar)}, ${h.aciklama}`);
+          if (bid) dosyaDepo.koy(bid, belge).catch(() => {});
+          bildir(`${UA.tl(D.elle.buro.esik)} üstü masraf yönetici onayına gönderildi; onaylanınca hesaba girer.`); return kaydet();
+        }
         dosyaElle(id).hareketler.push(h);
         iz(id, `Eklendi: ${UA.HAREKET[h.tur]} ${UA.tl(h.tutar)} — ${h.aciklama}${h.odeyen ? ' (ödeyen: ' + h.odeyen + ')' : ''}`);
         if (bid) dosyaDepo.koy(bid, belge).catch(() => bildir('Belge saklanamadı.'));
@@ -1231,6 +1546,37 @@ Kurallar:
         if (eklentide && chrome.runtime?.sendMessage) chrome.runtime.sendMessage({ tur: 'alarm-kur' }).catch(() => {});
         iz(null, 'Ayarlar değişti'); bildir('Ayarlar kaydedildi.'); return kaydet();
       case 'dokum': D.dokum = { bas: v.bas, bit: v.bit }; return ciz();
+      case 'gorev': {
+        if (!buroVar() || !v.is.trim()) return;
+        (D.elle.isler = D.elle.isler || []).push({ id: 'is-' + Date.now(), is: v.is.trim(), son: v.son || null, dosyaId: id, atananId: v.kime, atayanId: ben().id, kaynak: v.kime === ben().id ? 'Kendine' : `${ben().ad} atadı` });
+        iz(id, `Görev verildi: ${kulAd(v.kime)}: ${v.is.trim()}`); bildir(v.kime === ben().id ? 'Görev eklendi.' : `Görev ${kulAd(v.kime)} kişisine verildi; Özet sayfasında görünür.`); return kaydet();
+      }
+      case 'basvuru': {
+        if (!buroVar()) return;
+        const b = { id: 'b-' + Date.now(), ad: v.ad.trim(), tur: v.tur, konu: v.konu.trim(), kaynak: v.kaynak, telefon: v.telefon, karsi: karsiListe(v.karsi), tarih: UA.iso(new Date()), asama: 'yeni', atananId: null };
+        (D.elle.buro.basvurular = D.elle.buro.basvurular || []).unshift(b);
+        const k = kontrolEt(b.ad, b.karsi);
+        iz(null, `Yeni başvuru: ${b.ad}; çıkar çatışması kontrolü: ${{ catisma: 'çatışma olabilir', bilgi: 'eşleşme var', temiz: 'temiz' }[k.durum]}`);
+        D.basvuruForm = false; D.cekmece = { tur: 'basvuru', id: b.id }; bildir(k.durum === 'catisma' ? 'Başvuru kaydedildi. Dikkat: çıkar çatışması olabilir.' : 'Başvuru kaydedildi.'); return kaydet();
+      }
+      case 'davet': {
+        if (!buroVar() || !yonetici()) return;
+        D.elle.buro.kullanicilar.push({ id: 'u-' + Date.now(), ad: v.ad.trim(), eposta: v.eposta.trim(), rol: v.rol, unvan: UA.buro.ROLLER[v.rol].ad, durum: 'davet', uyap: null, katilma: UA.iso(new Date()) });
+        iz(null, `Kullanıcı davet edildi: ${v.ad.trim()} (${UA.buro.ROLLER[v.rol].ad})`); bildir('Demo: e-posta gönderilmedi; kişi listeye "davet gönderildi" olarak eklendi.'); return kaydet();
+      }
+      case 'esik': if (!buroVar() || !yonetici()) return; D.elle.buro.esik = Math.max(0, +v.esik || 0); iz(null, `Masraf onay eşiği: ${UA.tl(D.elle.buro.esik)}`); bildir('Eşik kaydedildi.'); return kaydet();
+      case 'devir': {
+        if (!buroVar() || !yonetici()) return;
+        const kimden = id, kime = v.kime, l = Object.keys(D.tamDb.dosyalar).filter((x) => D.elle.dosyalar[x]?.sorumluId === kimden && fd.get('d-' + x) === 'on');
+        for (const x of l) { const e = dosyaElle(x); e.sorumluId = kime; e.sorumlu = kulAd(kime); e.ekip = (e.ekip || []).filter((y) => y !== kime && (fd.get('ekipte') === 'on' || y !== kimden)); if (fd.get('ekipte') === 'on' && fd.get('pasif') !== 'on') e.ekip.push(kimden); iz(x, `Dosya devredildi: ${kulAd(kimden)} → ${kulAd(kime)}`); }
+        if (fd.get('pasif') === 'on') {
+          const k = UA.buro.kullanici(D.elle.buro, kimden); k.durum = 'pasif'; k.ayrilma = UA.iso(new Date());
+          for (const e of Object.values(D.elle.dosyalar)) e.ekip = (e.ekip || []).filter((y) => y !== kimden);
+          for (const i of D.elle.isler || []) if (!i.bitti && i.atananId === kimden) i.atananId = kime;
+          iz(null, `${k.ad} bürodan ayrıldı: hesabı kapatıldı, açık görevleri ${kulAd(kime)} kişisine geçti`);
+        }
+        D.modal = null; bildir(`${l.length} dosya ${kulAd(kime)} kişisine devredildi.`); return kaydet();
+      }
       case 'muvekkil-ekle': {
         const mid = 'm-' + Date.now();
         D.elle.muvekkiller[mid] = { id: mid, ad: v.ad.trim(), tur: v.tur, telefon: v.telefon, eposta: v.eposta, kayit: UA.iso(new Date()) };
@@ -1263,6 +1609,12 @@ Kurallar:
     }
   });
 
+  document.addEventListener('input', (ev) => {
+    if (ev.target.dataset?.canli !== 'bv') return;
+    const ad = ($('#bv-ad')?.value || '').trim(), karsi = karsiListe($('#bv-karsi')?.value);
+    const kutu = $('#bv-kontrol'); if (!kutu) return;
+    kutu.innerHTML = ad.length < 3 && !karsi.length ? '<div class="kucuk soluk">Adı ve karşı tarafı yazdıkça büronun dosyalarında çıkar çatışması aranır.</div>' : kontrolHtml(kontrolEt(ad, karsi));
+  });
   document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && (D.cekmece || D.modal)) { kapat(); ciz(); } });
   // Kullanıcı bir alana yazarken ekranı yeniden çizme; yazma bitince çiz.
   const yaziyor = () => { const a = document.activeElement; return !!a && (a.tagName === 'TEXTAREA' || a.tagName === 'SELECT' || (a.tagName === 'INPUT' && !['checkbox', 'radio', 'button', 'submit', 'file'].includes(a.type))); };

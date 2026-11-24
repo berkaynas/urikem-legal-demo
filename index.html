@@ -19,6 +19,7 @@
     <input id="ust-q" name="q" autocomplete="off" placeholder="Sorun: yarın ne var, avansı biten müvekkiller…">
   </form>
   <div class="ust-sag">
+    <div id="kullanici-kutu"></div>
     <div class="anahtar-grup" role="group" aria-label="Görünüm">
       <button data-gorunum="avukat">Avukat</button>
       <button data-gorunum="portal">Müvekkil portalı</button>
@@ -36,10 +37,12 @@
     <button data-sayfa="durusma">Duruşmalar</button>
     <button data-sayfa="evrak">Evrak ve tebligat <span class="sayac" hidden></span></button>
     <button data-sayfa="muvekkil">Müvekkiller</button>
+    <button data-sayfa="basvuru" data-buro hidden>Başvurular <span class="sayac" hidden></span></button>
     <button data-sayfa="dosya">Dosyalar</button>
     <button data-sayfa="para">Masraf ve avans <span class="sayac" hidden></span></button>
     <button data-sayfa="dilekce">Dilekçe</button>
     <button data-sayfa="hatirlatma">Hatırlatmalar</button>
+    <button data-sayfa="buro" data-buro hidden>Büro <span class="sayac" hidden></span></button>
     <div class="menu-alt" id="senkron"></div>
   </nav>
   <main id="icerik"></main>
@@ -51,6 +54,7 @@
 <script src="veri.js"></script>
 <script src="sorgu.js"></script>
 <script src="anonim.js"></script>
+<script src="buro.js"></script>
 <script src="demo.js"></script>
 <script src="panel.js"></script>
 
