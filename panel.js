@@ -146,7 +146,26 @@
     const dk = Math.round((Date.now() - new Date(iso)) / 60000);
     return dk < 1 ? 'az önce' : dk < 60 ? `${dk} dk önce` : dk < 1440 ? `${Math.round(dk / 60)} sa önce` : `${Math.round(dk / 1440)} gün önce`;
   };
-  const kart = (baslik, deger, alt, uyari, git) => `<div class="kart ${uyari ? 'uyari' : ''}"><div class="kart-bas">${baslik}</div><div class="deger">${deger}</div><div class="kucuk soluk">${alt}</div>${git ? `<button class="link kucuk" data-git="${git}">Gör →</button>` : ''}</div>`;
+  // Çizgi ikonlar (24×24, currentColor). Menü, özet kartları ve boş durumlar kullanır.
+  const IKON_YOL = {
+    ozet: '<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>',
+    durusma: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+    evrak: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+    hatirlatma: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
+    muvekkil: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
+    basvuru: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/>',
+    dosya: '<path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2z"/>',
+    para: '<path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/>',
+    dilekce: '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+    buro: '<rect x="4" y="2" width="16" height="20" rx="2"/><path d="M9 22v-4h6v4M8 6h.01M12 6h.01M16 6h.01M8 10h.01M12 10h.01M16 10h.01M8 14h.01M12 14h.01M16 14h.01"/>',
+    sure: '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M5 3 2 6M22 6l-3-3"/>',
+    kalkan: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>',
+  };
+  const ikon = (ad, cls = 'ikon') => (IKON_YOL[ad] ? `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IKON_YOL[ad]}</svg>` : '');
+  const kart = (baslik, deger, alt, uyari, git, ik) => {
+    const ic = `<div class="kart-bas">${ik ? ikon(ik, 'kart-ikon') : ''}<span>${baslik}</span></div><div class="deger">${deger}</div><div class="kucuk soluk">${alt}</div>`;
+    return git ? `<button class="kart tikla ${uyari ? 'uyari' : ''}" data-git="${git}">${ic}<span class="kart-ok" aria-hidden="true">→</span></button>` : `<div class="kart ${uyari ? 'uyari' : ''}">${ic}</div>`;
+  };
   const tutar = (n, cls = '') => `<span class="tutar ${n < 0 ? 'eksi' : ''} ${cls}">${UA.tl(n)}</span>`;
   const gTakvimLink = (baslik, bas, saatli, detay) => {
     const d = new Date(bas), p2 = (x) => String(x).padStart(2, '0');
@@ -214,10 +233,10 @@
       ${D.mod === 'canli' && !(D.sablonlar || {})['avukat_durusma_sorgula_brd.ajx'] ? '<div class="kontrol erken alt-bosluk"><b>Duruşmalar henüz okunamıyor.</b> UYAP\'ta UYAP İşlemlerim → Duruşma Sorgula ekranında bir kez Sorgula\'ya basın; sonra "güncelle".</div>' : ''}
       ${sorguKutusu(true)}
       <div class="kartlar">
-        ${kart('7 gün içinde duruşma', hafta.length, hafta[0] ? `İlki ${UA.trTarih(hafta[0].tarihSaat)} ${UA.trSaat(hafta[0].tarihSaat)}` : 'Yok', false, 'durusma')}
-        ${kart('Okunmamış yeni evrak', yeni.length, `${yeni.filter(UA.tebligatMi).length} tanesi tebligat`, false, 'evrak')}
-        ${kart('Süresi işleyen iş', sr.length, sorunlu.length ? `${sorunlu.length} tanesinde tarih uyumsuz` : sr[0] ? `En yakını ${kalanMetin(sr[0].kalan)} sonra` : 'Yok', sorunlu.length > 0, 'evrak')}
-        ${kart('Bekleyen masraf tahsilatı', UA.tl(f.bekleyen).replace(' TL', '<small> TL</small>'), `${avansiBiten().length} dosyada avans bitti`, f.bekleyen > 0, 'para')}
+        ${kart('7 gün içinde duruşma', hafta.length, hafta[0] ? `İlki ${UA.trTarih(hafta[0].tarihSaat)} ${UA.trSaat(hafta[0].tarihSaat)}` : 'Yok', false, 'durusma', 'durusma')}
+        ${kart('Okunmamış yeni evrak', yeni.length, `${yeni.filter(UA.tebligatMi).length} tanesi tebligat`, false, 'evrak', 'evrak')}
+        ${kart('Süresi işleyen iş', sr.length, sorunlu.length ? `${sorunlu.length} tanesinde tarih uyumsuz` : sr[0] ? `En yakını ${kalanMetin(sr[0].kalan)} sonra` : 'Yok', sorunlu.length > 0, 'evrak', 'sure')}
+        ${kart('Bekleyen masraf tahsilatı', UA.tl(f.bekleyen).replace(' TL', '<small> TL</small>'), `${avansiBiten().length} dosyada avans bitti`, f.bekleyen > 0, 'para', 'para')}
       </div>
       <div class="iki">
         <div>
@@ -539,8 +558,9 @@ Köşeli parantezli etiketler gizlenmiş adlardır; aynen kullan. Emin olmadığ
       const sonraki = sonrakiDurusma()[d.dosyaId];
       const yeni = (dosyaOkunmamis()[d.dosyaId] || []).length;
       const p = paraOzet(d.dosyaId), e = D.elle.dosyalar[d.dosyaId] || {};
-      return `<tr class="tikla" data-eylem="dosya" data-id="${esc(d.dosyaId)}"><td>${esc(kisaBirim(d.birimAdi))}<br><b>${esc(d.dosyaNo)}</b></td><td>${esc(d.dosyaTur || '')}<div class="kucuk soluk">${esc(d.dosyaDurum || '')}</div></td>
-        ${kisa ? '' : `<td>${esc(e.muvekkil || '—')}</td>`}${buroVar() ? `<td>${esc(kulAd(e.sorumluId))}${(e.ekip || []).length ? `<div class="kucuk soluk">+ ${e.ekip.map((x) => esc(ilkAd(kulAd(x)))).join(', ')}</div>` : ''}${e.gizli ? '<span class="rozet r-kirmizi">Gizli</span>' : ''}${(e.kaynaklar || []).length > 1 ? '<span class="rozet r-gri">Ortak vekâlet</span>' : ''}</td>` : ''}<td>${sonraki ? `${UA.trTarih(sonraki.tarihSaat)} ${UA.trSaat(sonraki.tarihSaat)}` : '<span class="soluk">—</span>'}</td>
+      const tur = String(d.dosyaTur || '').replace(/\s*Dosyası$/i, '');
+      return `<tr class="tikla" data-eylem="dosya" data-id="${esc(d.dosyaId)}"><td class="dosya-hucre"><b class="dosya-no">${esc(d.dosyaNo)}</b><div class="kucuk soluk kirp">${esc(kisaBirim(d.birimAdi))}</div></td><td class="dar-hucre">${esc(tur)}<div class="kucuk soluk">${esc(d.dosyaDurum || '')}</div></td>
+        ${kisa ? '' : `<td class="kirp-hucre"><span class="kirp">${esc(e.muvekkil || '—')}</span></td>`}${buroVar() ? `<td class="dar-hucre">${avatar(kulAd(e.sorumluId), true)} ${esc(kulAd(e.sorumluId).replace(/^(Av\.|Stj\. Av\.)\s*/, ''))}${(e.ekip || []).length ? `<div class="kucuk soluk ekip-satir">+ ${e.ekip.map((x) => esc(ilkAd(kulAd(x)))).join(', ')}</div>` : ''}${e.gizli || (e.kaynaklar || []).length > 1 ? `<div>${e.gizli ? '<span class="rozet r-kirmizi">Gizli</span>' : ''}${(e.kaynaklar || []).length > 1 ? '<span class="rozet r-gri">Ortak vekâlet</span>' : ''}</div>` : ''}</td>` : ''}<td class="dar-hucre">${sonraki ? `${UA.trTarih(sonraki.tarihSaat)}<div class="kucuk soluk">${UA.trSaat(sonraki.tarihSaat)}</div>` : '<span class="soluk">—</span>'}</td>
         <td>${yeni ? `<span class="rozet r-yeni">${yeni} yeni</span>` : ''}</td><td class="sayi ${p.bakiye < 0 ? 'eksi' : ''}">${p.hareketVar ? UA.tl(p.bakiye) : '<span class="soluk">—</span>'}</td></tr>`;
     }).join('')}</tbody></table></div>`;
   }
@@ -1076,22 +1096,36 @@ Kurallar:
   const avatar = (ad, kucuk) => `<span class="avatar${kucuk ? ' kucuk' : ''}" aria-hidden="true">${esc(ilkAd(ad).slice(0, 1))}</span>`;
   function girisEkrani() {
     const b = D.elle.buro, R = UA.buro.ROLLER;
-    return `<div class="giris"><div class="giris-kart">
-      <div class="marka"><span class="logo" aria-hidden="true">§</span><span>Urikem Legal</span></div>
-      <h1>${esc(b.ad)}</h1><p class="soluk">Büro hesabına giriş</p>
-      <div class="giris-form" aria-hidden="true">
-        <label class="dikey">E-posta<input disabled placeholder="ad@buro.com"></label>
-        <label class="dikey">Şifre<input type="password" disabled placeholder="••••••••"></label>
-        <div class="kucuk soluk">Ardından telefondaki doğrulama uygulamasından tek kullanımlık kod istenir.</div>
-      </div>
-      <h2>Demo: kim olarak gireceksiniz?</h2>
-      <p class="kucuk soluk alt-bosluk">Her kişi yalnız rolünün ve kendisine atanan dosyaların izin verdiği kadarını görür. Sağ üstten kişi değiştirip farkı görebilirsiniz.</p>
-      <div class="giris-kisiler">${kullanicilar().map((k) => { const n = Object.keys(UA.buro.kapsamla(D.tamDb, D.elle, b, k).dosyalar).length; return `
-        <button class="giris-kisi" data-eylem="giris" data-id="${esc(k.id)}">${avatar(k.ad)}
-          <span class="ana"><b>${esc(k.ad)}</b><span class="kucuk soluk blok-satir">${esc(R[k.rol].ad)} · ${esc(k.unvan || '')}</span><span class="kucuk blok-satir">${esc(R[k.rol].aciklama)}</span></span>
-          <span class="giris-sayi"><b>${n}</b><span class="kucuk soluk blok-satir">dosya</span></span>
-        </button>`; }).join('')}</div>
-    </div></div>`;
+    const madde = (ik, bas, metin) => `<li>${ikon(ik)}<div><b>${bas}</b><span>${metin}</span></div></li>`;
+    return `<div class="giris">
+      <section class="giris-tanitim" aria-label="Urikem Legal">
+        <div class="marka"><span class="logo" aria-hidden="true">§</span><span>Urikem Legal</span></div>
+        <h1>Büronun bütün UYAP dosyaları, tek ekranda ve herkes kendi yetkisiyle.</h1>
+        <ul class="giris-maddeler">
+          ${madde('evrak', 'UYAP kendiliğinden gelir', 'Her avukat kendi e-imzasıyla girer; dosya, duruşma, evrak ve masraf okunur. UYAP\'ta hiçbir işlem yapılmaz.')}
+          ${madde('kalkan', 'Çıkar çatışması kontrolü', 'Yeni başvuru, büronun bütün dosyalarındaki taraflarla karşılaştırılır.')}
+          ${madde('para', 'Masraf ve avans hesabı', 'Avansı biten müvekkil, onay bekleyen masraf, tahsil edilecek tutar.')}
+          ${madde('dilekce', 'Yapay zekâya yalnız anonim metin', 'Adlar ve numaralar gönderilmeden önce bu bilgisayarda maskelenir.')}
+        </ul>
+        <p class="giris-alt">Demo hesabı · bütün kişi, şirket ve dosyalar uydurmadır</p>
+      </section>
+      <section class="giris-kart" aria-label="Giriş">
+        <h2 class="giris-buro">${esc(b.ad)}</h2>
+        <p class="soluk kucuk">Büro hesabına giriş</p>
+        <div class="giris-form" aria-hidden="true">
+          <label class="dikey">E-posta<input disabled placeholder="ad@buro.com"></label>
+          <label class="dikey">Şifre<input type="password" disabled placeholder="••••••••"></label>
+          <div class="kucuk soluk">Şifreden sonra telefondaki doğrulama uygulamasından kod istenir.</div>
+        </div>
+        <div class="giris-ayrac"><span>Demo: kim olarak gireceksiniz?</span></div>
+        <div class="giris-kisiler">${kullanicilar().map((k) => { const n = Object.keys(UA.buro.kapsamla(D.tamDb, D.elle, b, k).dosyalar).length; return `
+          <button class="giris-kisi" data-eylem="giris" data-id="${esc(k.id)}" title="${esc(R[k.rol].aciklama)}">${avatar(k.ad)}
+            <span class="ana"><b>${esc(k.ad)}</b><span class="kucuk soluk blok-satir">${esc(R[k.rol].ad)}</span></span>
+            <span class="giris-sayi"><b>${n}</b><span class="kucuk soluk"> dosya</span></span>
+          </button>`; }).join('')}</div>
+        <p class="kucuk soluk ust-bosluk">Her kişi yalnız rolünün ve kendisine atanan dosyaların izin verdiği kadarını görür. Sağ üstten kişi değiştirip farkı görebilirsiniz.</p>
+      </section>
+    </div>`;
   }
   function kullaniciKutusu() {
     const k = ben();
@@ -1165,7 +1199,7 @@ Kurallar:
         <div id="bv-kontrol" class="ust-bosluk"><div class="kucuk soluk">Adı ve karşı tarafı yazdıkça büronun dosyalarında çıkar çatışması aranır.</div></div>
         <div class="form-son ust-bosluk"><button class="dugme">Başvuruyu kaydet</button></div>
       </form>` : ''}
-      <div class="kanban">${ASAMALAR.map(([k, ad]) => { const x = l.filter((b) => b.asama === k); return `<section class="kolon" aria-label="${esc(ad)}"><h2>${esc(ad)} <span class="soluk">${x.length}</span></h2>${x.map(basvuruKart).join('') || '<p class="bos kucuk">Yok</p>'}</section>`; }).join('')}</div>`;
+      <div class="kanban">${ASAMALAR.map(([k, ad]) => { const x = l.filter((b) => b.asama === k); return `<section class="kolon kolon-${k}" aria-label="${esc(ad)}"><h2>${esc(ad)} <span class="kolon-sayi">${x.length}</span></h2>${x.map(basvuruKart).join('') || '<p class="bos kucuk">Yok</p>'}</section>`; }).join('')}</div>`;
   }
 
   // ---------- büro yönetimi ----------
@@ -1254,9 +1288,19 @@ Kurallar:
     document.body.dataset.giris = girisGerek ? '1' : '0';
     const kk = $('#kullanici-kutu'); if (kk) kk.innerHTML = kullaniciKutusu();
     const gizle = buroVar() && ben() ? { durusma: sev('dosya') === 'yok', evrak: sev('dosya') === 'yok', dosya: sev('dosya') === 'yok', muvekkil: sev('muvekkil') === 'yok', para: sev('para') === 'yok', dilekce: sev('dilekce') === 'yok', basvuru: !['kendi', 'tam'].includes(sev('muvekkil')) } : {};
-    document.querySelectorAll('.menu [data-sayfa]').forEach((b) => { b.hidden = ('buro' in b.dataset && !buroVar()) || !!gizle[b.dataset.sayfa]; });
+    document.querySelectorAll('.menu [data-sayfa]').forEach((b) => {
+      b.hidden = ('buro' in b.dataset && !buroVar()) || !!gizle[b.dataset.sayfa];
+      if (!b.querySelector('.ikon')) b.insertAdjacentHTML('afterbegin', ikon(b.dataset.sayfa));
+    });
+    // Grup başlığı, altındaki bütün bölümler gizliyse gizlenir
+    document.querySelectorAll('.menu-grup').forEach((g) => {
+      let n = g.nextElementSibling, gorunen = false;
+      while (n && !n.classList.contains('menu-grup') && n.id !== 'senkron') { if (!n.hidden) gorunen = true; n = n.nextElementSibling; }
+      g.hidden = !gorunen;
+    });
     if (gizle[D.sayfa] || (!buroVar() && ['basvuru', 'buro'].includes(D.sayfa))) D.sayfa = 'ozet';
     document.body.dataset.ekran = D.gorunum;
+    document.body.dataset.sayfa = D.sayfa;
     document.querySelectorAll('[data-gorunum]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.gorunum === D.gorunum)));
     document.querySelectorAll('[data-mod]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mod === D.mod)));
     const modKutu = $('#mod-kutu'); if (modKutu) modKutu.hidden = !eklentide;
@@ -1278,8 +1322,12 @@ Kurallar:
     $('#icerik').innerHTML = girisGerek ? girisEkrani() : D.gorunum === 'portal' ? portal() : SAYFALAR[D.sayfa]();
     const k = $('#kaplama');
     if (girisGerek) { D.cekmece = null; D.modal = null; }
-    if (D.cekmece && D.gorunum === 'avukat') { k.hidden = false; k.className = 'kaplama sag'; k.innerHTML = D.cekmece.tur === 'muvekkil' ? muvekkilCekmece(D.cekmece.id) : D.cekmece.tur === 'basvuru' ? basvuruCekmece(D.cekmece.id) : dosyaCekmece(D.cekmece.id); }
-    else if (D.modal) { k.hidden = false; k.className = 'kaplama orta'; k.innerHTML = modalCiz(); }
+    // Açılış animasyonu yalnız çekmece/pencere yeni açıldığında oynar; içerik yeniden çizilince oynamaz.
+    const acikAnahtar = D.cekmece && D.gorunum === 'avukat' ? 'c:' + D.cekmece.tur + ':' + D.cekmece.id : D.modal ? 'm:' + D.modal.tur : '';
+    const anim = acikAnahtar && k.dataset.acik !== acikAnahtar ? ' anim' : '';
+    k.dataset.acik = acikAnahtar;
+    if (D.cekmece && D.gorunum === 'avukat') { k.hidden = false; k.className = 'kaplama sag' + anim; k.innerHTML = D.cekmece.tur === 'muvekkil' ? muvekkilCekmece(D.cekmece.id) : D.cekmece.tur === 'basvuru' ? basvuruCekmece(D.cekmece.id) : dosyaCekmece(D.cekmece.id); }
+    else if (D.modal) { k.hidden = false; k.className = 'kaplama orta' + anim; k.innerHTML = modalCiz(); }
     else { k.hidden = true; k.innerHTML = ''; }
     const b = $('#bildirim'); b.hidden = !D.bildirim; b.textContent = D.bildirim;
     sesleriBagla();
@@ -1615,7 +1663,15 @@ Kurallar:
     const kutu = $('#bv-kontrol'); if (!kutu) return;
     kutu.innerHTML = ad.length < 3 && !karsi.length ? '<div class="kucuk soluk">Adı ve karşı tarafı yazdıkça büronun dosyalarında çıkar çatışması aranır.</div>' : kontrolHtml(kontrolEt(ad, karsi));
   });
-  document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && (D.cekmece || D.modal)) { kapat(); ciz(); } });
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape' && (D.cekmece || D.modal)) { kapat(); ciz(); return; }
+    // "/" ya da Cmd/Ctrl+K: arama kutusuna git (yazı alanındayken değil)
+    const yaziyor = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName) || document.activeElement?.isContentEditable;
+    if ((ev.key === '/' && !yaziyor) || ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === 'k')) {
+      const q = document.body.dataset.sayfa === 'ozet' && $('#sorgu-b') ? $('#sorgu-b') : $('#ust-q');
+      if (q && document.body.dataset.giris !== '1') { ev.preventDefault(); q.focus(); }
+    }
+  });
   // Kullanıcı bir alana yazarken ekranı yeniden çizme; yazma bitince çiz.
   const yaziyor = () => { const a = document.activeElement; return !!a && (a.tagName === 'TEXTAREA' || a.tagName === 'SELECT' || (a.tagName === 'INPUT' && !['checkbox', 'radio', 'button', 'submit', 'file'].includes(a.type))); };
   let bekleyenCizim = false;

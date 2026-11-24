@@ -12,40 +12,47 @@
 <link rel="stylesheet" href="panel.css">
 </head>
 <body>
-<header class="ust">
-  <div class="marka"><span class="logo" aria-hidden="true">§</span><span>Urikem Legal</span></div>
-  <form class="sorgu ust-sorgu" id="ust-sorgu" data-form="sorgu" role="search">
-    <label for="ust-q" class="gizli">Dosyalarınıza soru sorun</label>
-    <input id="ust-q" name="q" autocomplete="off" placeholder="Sorun: yarın ne var, avansı biten müvekkiller…">
-  </form>
-  <div class="ust-sag">
-    <div id="kullanici-kutu"></div>
-    <div class="anahtar-grup" role="group" aria-label="Görünüm">
-      <button data-gorunum="avukat">Avukat</button>
-      <button data-gorunum="portal">Müvekkil portalı</button>
-    </div>
-    <div class="anahtar-grup" id="mod-kutu" role="group" aria-label="Veri kaynağı" hidden>
-      <button data-mod="canli">UYAP verisi</button>
-      <button data-mod="demo">Demo</button>
-    </div>
-  </div>
-</header>
-<div id="bant"></div>
-<div class="govde">
+<div class="kabuk">
   <nav class="menu" aria-label="Bölümler">
+    <div class="marka"><span class="logo" aria-hidden="true">§</span><span>Urikem Legal</span></div>
+    <div class="menu-grup">Günlük</div>
     <button data-sayfa="ozet">Özet</button>
     <button data-sayfa="durusma">Duruşmalar</button>
     <button data-sayfa="evrak">Evrak ve tebligat <span class="sayac" hidden></span></button>
+    <button data-sayfa="hatirlatma">Hatırlatmalar</button>
+    <div class="menu-grup">Müvekkil ve dosya</div>
     <button data-sayfa="muvekkil">Müvekkiller</button>
     <button data-sayfa="basvuru" data-buro hidden>Başvurular <span class="sayac" hidden></span></button>
     <button data-sayfa="dosya">Dosyalar</button>
     <button data-sayfa="para">Masraf ve avans <span class="sayac" hidden></span></button>
     <button data-sayfa="dilekce">Dilekçe</button>
-    <button data-sayfa="hatirlatma">Hatırlatmalar</button>
+    <div class="menu-grup" data-buro hidden>Yönetim</div>
     <button data-sayfa="buro" data-buro hidden>Büro <span class="sayac" hidden></span></button>
     <div class="menu-alt" id="senkron"></div>
   </nav>
-  <main id="icerik"></main>
+  <div class="alan">
+    <header class="ust">
+      <div class="marka ust-marka"><span class="logo" aria-hidden="true">§</span><span>Urikem Legal</span></div>
+      <form class="sorgu ust-sorgu" id="ust-sorgu" data-form="sorgu" role="search">
+        <label for="ust-q" class="gizli">Dosyalarınıza soru sorun</label>
+        <input id="ust-q" name="q" autocomplete="off" placeholder="Dosyalarınıza sorun: yarın ne var, avansı biten müvekkiller…">
+        <kbd class="kisayol" aria-hidden="true">/</kbd>
+      </form>
+      <div class="ust-sag">
+        <div class="anahtar-grup" role="group" aria-label="Görünüm">
+          <button data-gorunum="avukat">Avukat</button>
+          <button data-gorunum="portal">Müvekkil portalı</button>
+        </div>
+        <div class="anahtar-grup" id="mod-kutu" role="group" aria-label="Veri kaynağı" hidden>
+          <button data-mod="canli">UYAP verisi</button>
+          <button data-mod="demo">Demo</button>
+        </div>
+        <div id="kullanici-kutu"></div>
+      </div>
+    </header>
+    <div id="bant"></div>
+    <main id="icerik"></main>
+  </div>
 </div>
 <div id="kaplama" hidden></div>
 <div id="bildirim" role="status" hidden></div>
