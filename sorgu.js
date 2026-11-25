@@ -1,5 +1,5 @@
 // Urikem Legal — doğal dille sorgu (1. faz: kural tabanlı, internetsiz).
-// Soruyu bir filtreye çevirir: konu, zaman aralığı, dosya türü, müvekkil, mahkeme, dosya no ve durum.
+// Soruyu bir filtreye çevirir: konu, zaman aralığı, dosya türü, müvekkil, avukat, mahkeme, dosya no ve durum.
 // Veri hiçbir yere gönderilmez. 2. fazda serbest sorular için yapay zekâ yalnızca bu filtreyi üretir.
 (function (kok) {
   const UA = (kok.UA = kok.UA || {});
@@ -74,12 +74,16 @@
 
   UA.sorguCoz = (metin, ctx = {}, bugun = new Date()) => {
     const q = kucuk(metin);
-    const sonuc = { metin, konu: konuCoz(q), zaman: zamanCoz(q, bugun), tur: null, muvekkiller: [], birimler: [], dosyaNo: null, durum: {}, hedefMuvekkil: /müvekkil|muvekkil/.test(q) };
+    const sonuc = { metin, konu: konuCoz(q), zaman: zamanCoz(q, bugun), tur: null, muvekkiller: [], avukatlar: [], birimler: [], dosyaNo: null, durum: {}, hedefMuvekkil: /müvekkil|muvekkil/.test(q) };
     if (/\bicra\b|icra dosya|takip/.test(q)) sonuc.tur = 'icra';
     else if (/\bhukuk\b|dava/.test(q)) sonuc.tur = 'hukuk';
     const no = q.match(/\b(20\d{2})\s*\/\s*(\d{1,6})\b/);
     if (no) sonuc.dosyaNo = `${no[1]}/${no[2]}`;
     sonuc.muvekkiller = adEslestir(q, ctx.muvekkilAdlari || []);
+    // Büro avukatı: "Av. Elif Model'in dosyaları" → o avukatın sorumlu ya da ekipte olduğu dosyalar. ctx.avukatlar = [{ id, ad }]
+    const avAdlar = adEslestir(q, (ctx.avukatlar || []).map((k) => k.ad));
+    sonuc.avukatlar = (ctx.avukatlar || []).filter((k) => avAdlar.includes(k.ad)).map((k) => k.id);
+    if (sonuc.avukatlar.length) { const avKelime = new Set(avAdlar.flatMap((a) => kucuk(a).split(/\s+/))); sonuc.muvekkiller = sonuc.muvekkiller.filter((m) => !kucuk(m).split(/\s+/).every((w) => avKelime.has(w) || w.length < 3)); }
     // Mahkeme: müvekkil adına girmeyen, birim adlarında geçen kelimeler
     const muvKelime = new Set(sonuc.muvekkiller.flatMap((a) => kucuk(a).split(/\s+/)));
     const birimKelimeleri = ['ticaret', 'iş mahkeme', 'aile', 'sulh', 'tüketici', 'kadıköy', 'anadolu', 'bakırköy', 'ankara', 'izmir', 'icra dairesi', 'ağır ceza', 'idare'];
@@ -95,7 +99,7 @@
     if (sonuc.esikler.length && ['dosya', 'muvekkil'].includes(sonuc.konu)) sonuc.konu = sonuc.hedefMuvekkil ? 'muvekkil' : 'para';
     if (sonuc.esikler.length && sonuc.konu === 'para' && sonuc.hedefMuvekkil) sonuc.konu = 'muvekkil';
     // "Yarın ne var?" gibi yalnız zaman soran sorular: o aralıktaki bütün işler
-    if (sonuc.konu === 'dosya' && sonuc.zaman && !sonuc.muvekkiller.length && !sonuc.dosyaNo && !sonuc.birimler.length) sonuc.konu = 'ajanda';
+    if (sonuc.konu === 'dosya' && sonuc.zaman && !sonuc.muvekkiller.length && !sonuc.avukatlar.length && !sonuc.dosyaNo && !sonuc.birimler.length) sonuc.konu = 'ajanda';
     return sonuc;
   };
 

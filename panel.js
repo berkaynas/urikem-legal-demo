@@ -60,6 +60,9 @@
   // Büronun bütün verisi D.tamDb'de durur; yalnız çıkar çatışması kontrolü ona bakar.
   const buroVar = () => D.mod === 'demo' && !!D.elle.buro;
   const ben = () => (buroVar() ? UA.buro.kullanici(D.elle.buro, D.kullaniciId) : null);
+  // Aramada adı geçebilecek avukatlar (büroda dosya sorumlusu olabilenler). "Av." / "Stj. Av." öneki atılmış adla.
+  const yalinAd = (a) => String(a || '').replace(/^\s*(stj\.?\s*)?av\.?\s*/i, '').trim();
+  const avukatListesi = () => (buroVar() ? (D.elle.buro.kullanicilar || []).filter((k) => ['ortak', 'avukat', 'stajyer'].includes(k.rol)).map((k) => ({ id: k.id, ad: yalinAd(k.ad) })) : []);
   const sev = (modul) => (buroVar() ? UA.buro.seviye(D.elle.buro, ben(), modul) : 'tam');
   const yazar = (modul, id) => !buroVar() || UA.buro.yazabilir(D.elle.buro, ben(), modul, D.elle.dosyalar[id]);
   const yonetici = () => !buroVar() || sev('buro') === 'tam';
@@ -287,6 +290,7 @@ Süzgeç alanları (gerekmeyeni null ya da boş bırak):
  "tur": "icra" | "hukuk" | "ceza" | "idare" | null,
  "dosyaDurumlari": dosya durumunda geçmesi gereken küçük harfli ifadeler; BİRİ yeterli, ör. ["yargıtay", "istinaf"],
  "muvekkiller": soruda geçen müvekkil etiketleri, ör. ["[Müvekkil 3]"],
+ "avukatlar": soruda adı geçen büro avukatlarının etiketleri, ör. ["[Avukat 2]"]; "[Avukat 2]'nin dosyaları", "[Avukat 2]'ye verilen işler" gibi sorularda o avukatın sorumlu ya da ekipte olduğu dosyalar demektir (müvekkil DEĞİLDİR),
  "birimler": mahkeme adında geçmesi gereken küçük harfli kelimeler; BİRİ yeterli, ör. ["ticaret"],
  "dosyaNo": "YYYY/NNN" ya da soruda geçen dosya no etiketi | null,
  "evrakVar": dosyada bulunması gereken evrak türü kelimeleri, küçük harf, ör. ["bilirkişi raporu"],
@@ -303,7 +307,7 @@ Tutar ya da sayı şartı varsa ("5000 TL'den fazla", "10 binin altında", "3'te
 Köşeli parantezli etiketler gizlenmiş adlardır; aynen kullan. Emin olmadığın alanı boş bırak.`;
   function sorguMaskele(soru) {
     const adlar = [...new Set([...muvekkiller().map((m) => m.ad), ...Object.values(D.elle.dosyalar || {}).map((e) => e.muvekkil)])].filter((a) => a && !/\*{2,}/.test(a));
-    const liste = adlar.map((a, i) => `[Müvekkil ${i + 1}] = ${a}`).join('\n');
+    const liste = [...adlar.map((a, i) => `[Müvekkil ${i + 1}] = ${a}`), ...avukatListesi().map((k, i) => `[Avukat ${i + 1}] = ${k.ad}`)].join('\n');
     const h = UA.anonimlestir(soru, liste);
     return { ...h, supheli: supheliSuz(h.supheliler, h.anonim) };
   }
@@ -319,6 +323,8 @@ Köşeli parantezli etiketler gizlenmiş adlardır; aynen kullan. Emin olmadığ
       esikler: (Array.isArray(j.esikler) ? j.esikler : []).filter((x) => x && ['masraf', 'avans', 'tahsil', 'bakiye', 'dosya'].includes(x.alan) && ['>', '>=', '<', '<='].includes(x.op) && Number.isFinite(+x.deger)).map((x) => ({ alan: x.alan, op: x.op, deger: +x.deger })), limit: +j.limit || null, anlasilan: g(j.anlasilan), yz: true };
     const adlar = new Set(muvekkiller().map((m) => m.ad));
     r.muvekkiller = (j.muvekkiller || []).filter((x) => adlar.has(x));
+    const avk = avukatListesi();
+    r.avukatlar = [...new Set((j.avukatlar || []).map((x) => avk.find((k) => UA.normal(k.ad) === UA.normal(yalinAd(x)))?.id).filter(Boolean))];
     r.hedefMuvekkil = r.konu === 'muvekkil' || r.sirala === 'masraf' && r.konu === 'muvekkil';
     return r;
   }
@@ -338,10 +344,10 @@ Köşeli parantezli etiketler gizlenmiş adlardır; aynen kullan. Emin olmadığ
   }
 
   function sorguSayfa() {
-    const kural = UA.sorguCoz(D.sorgu, { muvekkilAdlari: muvekkiller().map((m) => m.ad) });
+    const kural = UA.sorguCoz(D.sorgu, { muvekkilAdlari: muvekkiller().map((m) => m.ad), avukatlar: avukatListesi() });
     // Kural yalnız konuyu yakalayıp başka hiçbir şart bulamadıysa ve soru kısa değilse (ya da "ama, henüz, olmayan, en çok" gibi
     // kuralların bilmediği bir yapı varsa) soruyu anlamamış sayılır ve Claude'a sorulur.
-    const sartsiz = !kural.zaman && !kural.tur && !kural.muvekkiller.length && !kural.birimler.length && !kural.dosyaNo && !Object.keys(kural.durum).length && !(kural.esikler || []).length;
+    const sartsiz = !kural.zaman && !kural.tur && !kural.muvekkiller.length && !kural.avukatlar.length &&!kural.birimler.length && !kural.dosyaNo && !Object.keys(kural.durum).length && !(kural.esikler || []).length;
     const kelime = String(D.sorgu).trim().split(/\s+/).length;
     const karmasik = /\b(ama|fakat|henüz|hiç|olmayan|olmamış|etmediğim|etmediğimiz|yapmadığım|gelmeyen|en çok|en fazla|en az|kaç|hangi|neden|değil)\b/i.test(D.sorgu);
     const zayif = sartsiz && ((kural.konu === 'dosya' && kelime >= 2) || kelime >= 4 || karmasik);
@@ -357,6 +363,7 @@ Köşeli parantezli etiketler gizlenmiş adlardır; aynen kullan. Emin olmadığ
     if (r.zaman) cipler.push(`Zaman: ${r.zaman.etiket} (${UA.trTarih(r.zaman.bas)} – ${UA.trTarih(r.zaman.bit)})`);
     if (r.tur) cipler.push(`Tür: ${r.tur}`);
     for (const m of r.muvekkiller) cipler.push(`Müvekkil: ${m}`);
+    for (const id of r.avukatlar || []) cipler.push(`Avukat: ${kulAd(id)} (sorumlu ya da ekipte)`);
     if (r.birimler.length) cipler.push(`Mahkeme: ${r.birimler.join(r.birimVeya ? ' ya da ' : ' ve ')}`);
     if (r.dosyaNo) cipler.push(`Dosya: ${r.dosyaNo}`);
     const DUR = { avansEksi: 'avansı biten', okunmamis: 'okunmamış', belgesiz: 'belgesi eksik', suresiz: 'son günü girilmemiş', uyumsuz: 'tarihi uyumsuz', kapali: 'kapalı' };
@@ -385,6 +392,7 @@ Köşeli parantezli etiketler gizlenmiş adlardır; aynen kullan. Emin olmadığ
         if ((r.evrakYok || []).some((k) => metin.includes(k))) return false;
       }
       if (r.muvekkiller.length && !r.muvekkiller.includes(e.muvekkil)) return false;
+      if ((r.avukatlar || []).length && !r.avukatlar.some((id) => UA.buro.ekipte({ id }, e))) return false;
       if (r.birimler.length && !(r.birimVeya ? r.birimler.some : r.birimler.every).call(r.birimler, (b) => UA.normal(d.birimAdi).includes(b))) return false;
       if (r.dosyaNo && d.dosyaNo !== r.dosyaNo) return false;
       return true;
