@@ -1300,7 +1300,7 @@ Kurallar:
     });
     if (gizle[D.sayfa] || (!buroVar() && ['basvuru', 'buro'].includes(D.sayfa))) D.sayfa = 'ozet';
     document.body.dataset.ekran = D.gorunum;
-    document.body.dataset.sayfa = D.sayfa;
+    document.body.dataset.aktif = D.sayfa;
     document.querySelectorAll('[data-gorunum]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.gorunum === D.gorunum)));
     document.querySelectorAll('[data-mod]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mod === D.mod)));
     const modKutu = $('#mod-kutu'); if (modKutu) modKutu.hidden = !eklentide;
@@ -1668,7 +1668,7 @@ Kurallar:
     // "/" ya da Cmd/Ctrl+K: arama kutusuna git (yazı alanındayken değil)
     const yaziyor = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName) || document.activeElement?.isContentEditable;
     if ((ev.key === '/' && !yaziyor) || ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === 'k')) {
-      const q = document.body.dataset.sayfa === 'ozet' && $('#sorgu-b') ? $('#sorgu-b') : $('#ust-q');
+      const q = document.body.dataset.aktif === 'ozet' && $('#sorgu-b') ? $('#sorgu-b') : $('#ust-q');
       if (q && document.body.dataset.giris !== '1') { ev.preventDefault(); q.focus(); }
     }
   });

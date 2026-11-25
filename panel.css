@@ -92,7 +92,7 @@ body[data-ekran="portal"] .menu > button[aria-current="page"]::before { display:
 .sorgu.ust-sorgu input { padding: 8px 40px 8px 36px; border-radius: 10px; background: var(--yuzey); border-color: var(--cizgi); }
 .kisayol { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); pointer-events: none; }
 .sorgu.ust-sorgu input:focus + .kisayol { display: none; }
-body[data-sayfa="ozet"][data-ekran="avukat"] .ust-sorgu { visibility: hidden; }
+body[data-aktif="ozet"][data-ekran="avukat"] .ust-sorgu { visibility: hidden; }
 .ust-sag { margin-left: auto; display: flex; gap: 10px; align-items: center; }
 .anahtar-grup { display: flex; background: var(--yuzey2); border-radius: 10px; padding: 3px; }
 .anahtar-grup[hidden] { display: none; }
@@ -394,7 +394,7 @@ ul.duz { margin: 6px 0 4px; padding-left: 18px; }
   .menu > button[aria-current="page"]::before { display: none; }
   .ust { position: static; flex-wrap: wrap; gap: 10px; padding: 10px 16px; }
   .ust-sorgu { order: 3; flex-basis: 100%; max-width: none; }
-  body[data-sayfa="ozet"][data-ekran="avukat"] .ust-sorgu { display: none; }
+  body[data-aktif="ozet"][data-ekran="avukat"] .ust-sorgu { display: none; }
   .kisayol { display: none; }
   .bant { margin: 10px 16px 0; }
   main { padding: 16px 16px 72px; }
