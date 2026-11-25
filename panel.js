@@ -290,7 +290,7 @@ Süzgeç alanları (gerekmeyeni null ya da boş bırak):
  "tur": "icra" | "hukuk" | "ceza" | "idare" | null,
  "dosyaDurumlari": dosya durumunda geçmesi gereken küçük harfli ifadeler; BİRİ yeterli, ör. ["yargıtay", "istinaf"],
  "muvekkiller": soruda geçen müvekkil etiketleri, ör. ["[Müvekkil 3]"],
- "avukatlar": soruda adı geçen büro avukatlarının etiketleri, ör. ["[Avukat 2]"]; "[Avukat 2]'nin dosyaları", "[Avukat 2]'ye verilen işler" gibi sorularda o avukatın sorumlu ya da ekipte olduğu dosyalar demektir (müvekkil DEĞİLDİR),
+ "avukatlar": soruda adı geçen büro avukatlarının etiketleri, ör. ["[Avukat 2]"]; "[Avukat 2]'nin dosyaları", "[Avukat 2]'ye verilen işler" gibi sorularda o avukatın sorumlu ya da ekipte olduğu dosyalar demektir (müvekkil DEĞİLDİR). "[Büro çalışanı N]" sekreter ya da mali müşavirdir; dosya sorumlusu olamaz, müvekkil de değildir: süzgeçte yeri yoktur, "anlasilan"da bunu söyle,
  "birimler": mahkeme adında geçmesi gereken küçük harfli kelimeler; BİRİ yeterli, ör. ["ticaret"],
  "dosyaNo": "YYYY/NNN" ya da soruda geçen dosya no etiketi | null,
  "evrakVar": dosyada bulunması gereken evrak türü kelimeleri, küçük harf, ör. ["bilirkişi raporu"],
@@ -305,9 +305,34 @@ Dosya türleri: ${ctx.turler.join(', ')}. Dosya durumları: ${ctx.durumlar.join(
 "Yargıtay'da", "istinafta", "karara çıkmış", "derdest", "kapanmış" gibi ifadeler dosya DURUMUDUR, mahkeme adı değildir: dosyaDurumlari'na yaz. "Açık dosya" = dosyaDurumlari ["açık"]. Mahkeme adı ancak "ticaret mahkemesi", "Kadıköy", "3. İş" gibi bir mahkemeyi kastediyorsa birimler'e yazılır.
 Tutar ya da sayı şartı varsa ("5000 TL'den fazla", "10 binin altında", "3'ten çok dosyası olan") mutlaka esikler'e yaz; "fazla/üstünde" ">", "en az" ">=", "az/altında" "<", "en fazla" "<=". Müvekkil soruluyorsa konu muvekkil, dosya soruluyorsa konu para olur. "5 bin", "5.000", "5000 TL" hepsi 5000'dir.
 Köşeli parantezli etiketler gizlenmiş adlardır; aynen kullan. Emin olmadığın alanı boş bırak.`;
+  // Anonimleştirme çekirdeği adı ancak kesme işaretiyle ayrılmış ekle tanır ("Model'in"). Arama kutusuna çoğu kişi
+  // "modelin" diye bitişik yazar; maskelemeden önce bilinen adlara bitişik ekleri kesme işaretiyle ayırırız.
+  function ekAyir(metin, adlar) {
+    const k = UA.anonimIc.katla(metin), ekler = new Map(); // ad sonu konumu → yumuşamışsa adın asıl son harfi
+    for (const a of adlar) {
+      const kelimeler = UA.anonimIc.katla(a).replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
+      if (!kelimeler.length || kelimeler.at(-1).length < 3) continue;
+      // Ünsüz yumuşaması: Taslak → Taslağın, Kitap → Kitabın, Ahmet → Ahmedin (katlanmış metinde ğ = g). Yumuşamış harf adın asıl harfine döner.
+      const son = kelimeler.at(-1), yumusak = { k: 'g', p: 'b', t: 'd' }[son.at(-1)];
+      const sonDesen = yumusak ? `${son.slice(0, -1)}[${son.at(-1)}${yumusak}]` : son;
+      const re = new RegExp(`(?<![a-z0-9])${[...kelimeler.slice(0, -1), sonDesen].join('[\\s.,]+')}(?=[a-z]{1,8}(?![a-z0-9]))`, 'g');
+      for (const m of k.matchAll(re)) { const e = m.index + m[0].length; ekler.set(e, k[e - 1] !== son.at(-1) ? String(a).trim().at(-1) : null); }
+    }
+    return [...ekler].sort((x, y) => y[0] - x[0]).reduce((s, [i, harf]) => (harf ? s.slice(0, i - 1) + harf : s.slice(0, i)) + "'" + s.slice(i), metin);
+  }
   function sorguMaskele(soru) {
     const adlar = [...new Set([...muvekkiller().map((m) => m.ad), ...Object.values(D.elle.dosyalar || {}).map((e) => e.muvekkil)])].filter((a) => a && !/\*{2,}/.test(a));
-    const liste = [...adlar.map((a, i) => `[Müvekkil ${i + 1}] = ${a}`), ...avukatListesi().map((k, i) => `[Avukat ${i + 1}] = ${k.ad}`)].join('\n');
+    const avk = avukatListesi(), avkId = new Set(avk.map((k) => k.id));
+    // Avukat olmayan büro çalışanları (sekreter, mali müşavir) da maskelenir; süzgeçte yeri yoktur.
+    const calisan = buroVar() ? (D.elle.buro.kullanicilar || []).filter((k) => !avkId.has(k.id)).map((k) => yalinAd(k.ad)) : [];
+    // Büroda herkes birbirini ilk adıyla anar ("Kaan'ın duruşmaları"): ilk ad büroda tek ve hiçbir müvekkil adında geçmiyorsa o da maskelenir.
+    const ilk = (a) => String(a).trim().split(/\s+/)[0];
+    const muvKelime = new Set(adlar.flatMap((a) => UA.normal(a).split(/\s+/)));
+    const ilkSay = {}; for (const a of [...avk.map((k) => k.ad), ...calisan]) ilkSay[UA.normal(ilk(a))] = (ilkSay[UA.normal(ilk(a))] || 0) + 1;
+    const tekIlk = (a) => { const x = ilk(a); return x.length >= 3 && x !== String(a).trim() && ilkSay[UA.normal(x)] === 1 && !muvKelime.has(UA.normal(x)) ? x : null; };
+    const varyant = (a) => [a, tekIlk(a)].filter(Boolean);
+    const liste = [...adlar.map((a, i) => `[Müvekkil ${i + 1}] = ${a}`), ...avk.map((k, i) => `[Avukat ${i + 1}] = ${varyant(k.ad).join('; ')}`), ...calisan.map((a, i) => `[Büro çalışanı ${i + 1}] = ${varyant(a).join('; ')}`)].join('\n');
+    soru = ekAyir(soru, [...adlar, ...avk.flatMap((k) => varyant(k.ad)), ...calisan.flatMap(varyant)]);
     const h = UA.anonimlestir(soru, liste);
     return { ...h, supheli: supheliSuz(h.supheliler, h.anonim) };
   }
@@ -343,7 +368,8 @@ Köşeli parantezli etiketler gizlenmiş adlardır; aynen kullan. Emin olmadığ
     sonraCiz();
   }
 
-  function sorguSayfa() {
+  // gevsek: tutar ve durum şartları atılmış hâli; sonuç çıkmayınca "şartsız" listeyi göstermek için iç çağrı ({ govde, sayi } döner).
+  function sorguSayfa(gevsek) {
     const kural = UA.sorguCoz(D.sorgu, { muvekkilAdlari: muvekkiller().map((m) => m.ad), avukatlar: avukatListesi() });
     // Kural yalnız konuyu yakalayıp başka hiçbir şart bulamadıysa ve soru kısa değilse (ya da "ama, henüz, olmayan, en çok" gibi
     // kuralların bilmediği bir yapı varsa) soruyu anlamamış sayılır ve Claude'a sorulur.
@@ -355,9 +381,9 @@ Köşeli parantezli etiketler gizlenmiş adlardır; aynen kullan. Emin olmadığ
     yzDurumTazele();
     const yzBagli = D.yzDurum?.hazir && D.yzDurum?.giris;
     // Yapay zekâ bağlıysa her soru Claude'a yorumlatılır (yalnız maskeli soru gider); kurallar yalnız bağlantı yoksa ya da Claude hata verirse kullanılır.
-    if (yzBagli && !yzS) { const soru = D.sorgu; D.sorguYz = { soru, bekliyor: true }; setTimeout(() => yzSorguYorumla(soru), 0); }
+    if (yzBagli && !yzS && !gevsek) { const soru = D.sorgu; D.sorguYz = { soru, bekliyor: true }; setTimeout(() => yzSorguYorumla(soru), 0); }
     const yzBekle = !window.URIKEM_DEMO && (yzS?.bekliyor || yzS?.onayGerek || (D.yzDurum === undefined && !yzS));
-    const r = yzS?.filtre || kural;
+    const r0 = yzS?.filtre || kural, r = gevsek ? { ...r0, esikler: [], durum: {}, sirala: null, limit: null } : r0;
     const KONU = { durusma: 'duruşmalar', tebligat: 'tebligatlar', evrak: 'evrak', sure: 'son günler', para: 'masraf ve avans', muvekkil: 'müvekkiller', dosya: 'dosyalar', ajanda: 'o günlerin işleri' };
     const cipler = [`Konu: ${KONU[r.konu]}`];
     if (r.zaman) cipler.push(`Zaman: ${r.zaman.etiket} (${UA.trTarih(r.zaman.bas)} – ${UA.trTarih(r.zaman.bit)})`);
@@ -441,6 +467,10 @@ Köşeli parantezli etiketler gizlenmiş adlardır; aynen kullan. Emin olmadığ
       sayi = l.length;
       govde = l.length ? dosyaTablosu(l) : '';
     }
+    if (gevsek) return { govde, sayi };
+    // Şartı sağlayan kayıt yoksa bunu açıkça söyle ve şartsız hâlini göster: "Elif'in tahsil edilecek avansı" → yok; dosyalarının avans durumu şu.
+    const sartlar = [...(r.esikler || []).map((x) => `${ESIK_AD[x.alan]} ${x.op} ${x.alan === 'dosya' ? x.deger : UA.tl(x.deger)}`), ...Object.keys(r.durum).map((k) => DUR[k] || k)];
+    const gev = !govde && sartlar.length ? sorguSayfa(true) : null;
     if (yzBekle) return `<div class="baslik"><div><h1>Sorgu</h1><div class="soluk">“${esc(D.sorgu)}”</div></div></div>
       ${sorguKutusu(false)}
       ${yzS?.onayGerek ? `<div class="kontrol erken alt-bosluk">Soruda maskelenemeyen bir ad olabilir: <b>${yzS.supheli.map((x) => esc(x.deger)).join(', ')}</b>. Claude'a şu hâliyle gidecek: “${esc(yzS.maskeli)}”. <button class="dugme" data-eylem="sorgu-yz-gonder">Yine de Claude'a sor</button> <button class="ikincil" data-eylem="sorgu-kural">Claude'a sorma, kurallarla ara</button></div>`
@@ -452,7 +482,7 @@ Köşeli parantezli etiketler gizlenmiş adlardır; aynen kullan. Emin olmadığ
       ${yzS?.hata ? `<div class="kontrol gec alt-bosluk">Claude soruyu yorumlayamadı: ${esc(yzS.hata)} Kurallarla anlaşılan sonuç gösteriliyor.</div>` : ''}
       ${r.yz && r.anlasilan ? `<div class="kontrol uyumlu alt-bosluk"><b>Claude'un anladığı:</b> ${esc(r.anlasilan)} <span class="kucuk soluk">(Claude'a yalnız soru gitti: “${esc(yzS.maskeli)}”; arama bu bilgisayarda yapıldı.)</span></div>` : ''}
       <div class="anlasilan"><span class="kucuk soluk">${r.yz ? 'Süzgeç:' : 'Asistanın anladığı:'}</span> ${cipler.map((c) => `<span class="cip sabit">${esc(c)}</span>`).join('')} <span class="kucuk soluk">· ${sayi} sonuç</span>${yzBagli && !yzS?.bekliyor && !r.yz ? ' <button class="link" data-eylem="sorgu-yz">Claude ile yorumla</button>' : ''}</div>
-      ${govde || bos('Bu soruya uyan kayıt bulunamadı. Soruyu farklı sözcüklerle deneyin ya da aşağıdaki örneklerden birini seçin.')}
+      ${govde || (gev?.sayi ? `<div class="kontrol erken alt-bosluk"><b>Cevap: yok.</b> Bu şartı sağlayan kayıt yok (${esc(sartlar.join(', '))}). Şart olmadan aynı arama aşağıda (${gev.sayi} kayıt); rakamları oradan görebilirsiniz.</div>${gev.govde}` : bos('Bu soruya uyan kayıt bulunamadı. Soruyu farklı sözcüklerle deneyin ya da aşağıdaki örneklerden birini seçin.'))}
       <div class="oneriler">${UA.ORNEK_SORULAR.map((q) => `<button class="cip" data-sor="${esc(q)}">${esc(q)}</button>`).join('')}</div>
       ${buroVar() ? `<p class="kucuk soluk">Arama ve yapay zekâ yalnız sizin görebildiğiniz ${Object.keys(D.db.dosyalar).length} dosyayı kullanır (büroda ${Object.keys(D.tamDb.dosyalar).length} dosya var).</p>` : ''}
       <p class="kucuk soluk">${yzBagli ? 'Sorular Claude ile yorumlanır: yalnız soru, adlar maskelenerek gider; Claude bir süzgeç döndürür, arama ve sonuçlar bu bilgisayarda kalır.' : 'Yapay zekâ bağlı değil; sorular bu bilgisayarda kurallarla çözülüyor. Kurallar basit soruları anlar; tutar şartlı ya da karmaşık sorular için yapay zekâ köprüsünü açın.'}</p>`;
